@@ -18,14 +18,16 @@
 #include <memory>
 #include <utility>
 #include <vector>
+#include <iomanip>
 
 #include "open_spiel/spiel_utils.h"
 #include "open_spiel/utils/tensor_view.h"
 #include "mpg_generator.h"
+#include "string_compress.h"
 
 namespace open_spiel::mpg {
-    std::unique_ptr<MetaFactory> metaFactory = std::make_unique<ExampleFactory>();
-    //std::unique_ptr<MetaFactory> metaFactory = std::make_unique<UniformGnpMetaFactory>(20,0.5,-1,1,199);
+    //std::unique_ptr<MetaFactory> metaFactory = std::make_unique<ExampleFactory>();
+    std::unique_ptr<MetaFactory> metaFactory = std::make_unique<ParserMetaFactory>();
 
     namespace
     {
@@ -44,14 +46,21 @@ namespace open_spiel::mpg {
             /*provides_information_state_tensor=*/false,
             /*provides_observation_string=*/true,
             /*provides_observation_tensor=*/true,
-            /*parameter_specification=*/{{"max_moves",GameParameter(GameParameter::Type::kInt,true)}}  // no parameters
+            /*parameter_specification=*/{{"max_moves",GameParameter(GameParameter::Type::kInt,true)},
+                                         {"generator",GameParameter(GameParameter::Type::kString,true)},
+                                         {"max_size",GameParameter(GameParameter::Type::kInt,true)},
+                                         {"generator_params", GameParameter(GameParameter::Type::kString,false)},
+                                         {"specs_file",GameParameter(GameParameter::Type::kString,false)},
+                                         {"representation",GameParameter(GameParameter::Type::kString)}}  // no parameters
         };
 
 
 
         std::shared_ptr<const Game> Factory(const GameParameters& params)
         {
-            return metaFactory->CreateGame(params);
+            auto game=metaFactory->CreateGame(params);
+            game->NewInitialEnvironmentState();
+            return game;
         }
 
 
@@ -60,69 +69,158 @@ namespace open_spiel::mpg {
 
         RegisterSingleTensorObserver single_tensor(kGameType.short_name);
 
+        WeightType  MeanPayoff(const std::vector<WeightType> & M)
+        {
+            if(M.empty())
+                return 0;
+            WeightType sum = 0;
+            for(auto w: M)
+                sum += w;
+            return sum / static_cast<WeightType>(M.size());
+        }
+
+        WeightType WeightFromPerspective(WeightType weight,Player player)
+        {
+            if(player == mpg::PlayerIdentifier::kMaxPlayer)
+                return weight;
+            else
+                return -weight;
+        }
+
     }  // namespace
 
 
 
-std::string StateToString(NodeType state) {
-    return absl::StrCat("State(", state, ")");
-}
+    std::string StateToString(NodeType state) {
+        return absl::StrCat("State(", state, ")");
+    }
+
+    std::ostream& operator<<(std::ostream &os, const WeightedGraphType &graph)
+    {
+        for(int u=0;u<graph.size();++u)
+        {
+            os << u << ": ";
+            for(auto [v,w]: graph[u])
+                os << v << "(" << w << ") ";
+            os << '\n';
+        }
+        return os;
+    }
+
+    std::ostream &operator<<(std::ostream &os, const GraphType &graph)
+    {
+        for(int u=0;u<graph.size();++u)
+        {
+            os << u << ": ";
+            for(auto v: graph[u])
+                os << v << " ";
+            os << '\n';
+        }
+        return os;
+    }
+
+    std::ostream &operator<<(std::ostream &os, const AdjacencyMatrixType &graph) {
+        for(int u=0;u<graph.size();++u)
+        {
+            for (int v = 0; v < graph.size(); ++v)
+                os << graph[u][v] << ' ';
+            os << '\n';
+        }
+        return os;
+    }
 
 
-void MPGState::DoApplyAction(Action move) {
-  SPIEL_CHECK_TRUE(graph[current_state].count(move));
-  float K= static_cast<float>(num_moves_)/static_cast<float>(num_moves_+1);
-  mean_payoff = K * mean_payoff +graph[current_state].at(move) / static_cast<float>(num_moves_ + 1);
-  current_state = move;
-  current_player_ = ! current_player_;
-  num_moves_ += 1;
-}
+    void MPGEnvironmentState::DoApplyAction(Action move)
+    {
+      SPIEL_CHECK_TRUE(environment->graph[current_state].count(move));
+      float K= static_cast<float>(num_moves_)/static_cast<float>(num_moves_+1);
+      mean_payoff = K * mean_payoff +environment->graph[current_state].at(move) / static_cast<float>(num_moves_ + 1);
+      current_state = move;
+      current_player_ = ! current_player_;
+      state_history.push_back(current_state);
+      num_moves_ += 1;
+        }
 
-std::vector<Action> MPGState::LegalActions() const {
-  if (IsTerminal()) return {};
-    std::vector<Action> moves;
-    moves.reserve(graph[current_state].size());
-    for(auto [v, w]: graph[current_state])
-        moves.push_back(v);
-  return moves;
-}
+    std::vector<Action> MPGEnvironmentState::LegalActions() const {
+      if (IsTerminal()) return {};
+        std::vector<Action> moves;
+        moves.reserve(environment->graph[current_state].size());
+        for(auto [v, w]: environment->graph[current_state])
+            moves.push_back(v);
+      return moves;
+    }
 
-std::string MPGState::ActionToString(Player player,
-                                           Action action_id) const {
-  return game_->ActionToString(player, action_id);
-}
+    std::string MPGEnvironmentState::ActionToString(Player player,
+                                                    Action action_id) const {
+      return game_->ActionToString(player, action_id);
+    }
 
-MPGState::MPGState(std::shared_ptr<const Game> game) : State(game), graph(dynamic_cast<const MPGMetaGame*>(game.get())->GetGraph()),
-                                                       current_state(dynamic_cast<const MPGMetaGame*>(game.get())->GetStartingState()), current_player_(0),
-                                                       num_moves_(0), state_history({0})
-{
-}
+    MPGEnvironmentState::MPGEnvironmentState(const std::shared_ptr<const Game>& game) : MPGEnvironmentState(game,dynamic_cast<const MPGMetaGame *>(game.get())->GetLastEnvironment())
+    {
+    }
 
-std::string MPGState::ToString() const {
+    std::string MPGEnvironmentState::ToString() const
+    {
+        std::ostringstream stream;
+        if(!game_->GetParameters().count("representation") || game_->GetParameters().at("representation").string_value()=="normal")
+        {
+            stream << "@@@\n";
+            stream << "@Graph: \n{";
+            for(int i = 0; i < environment->graph.size(); i++)
+            {
+                stream << i << ": ";
+                for(auto [v, w]: environment->graph[i])
+                    stream << "(" << v << ", " << w << ") ";
+                stream << "\n";
+            }
+            stream << "}\n";
+            stream << "@Current state: " << current_state << "\n";
+            stream << "@Current player: " << current_player_ << "\n";
+            stream << "@Number of moves: " << num_moves_ << "\n";
+            stream << "@@@\n";
+            return stream.str();
+        }
+        else if (game_->GetParameters().at("representation").string_value() == "compressed")
+        {
+            for(int i = 0; i < environment->graph.size(); i++)
+            {
+                stream << i << ":";
+                for(auto [v, w]: environment->graph[i])
+                    stream  << v << ":" << std::setprecision(3) << w << ":";
+                stream << "\n";
+            }
+            stream << current_state << ':' << current_player_;
+            return base64_encode(bzip_compress(stream.str()));
+        }
+        else if (game_->GetParameters().at("representation").string_value() == "hash")
+        {
+            for(int i = 0; i < environment->graph.size(); i++)
+            {
+                stream << i << ":";
+                for(auto [v, w]: environment->graph[i])
+                    stream  << v << ":" << std::setprecision(3) << w << ":";
+                stream << "\n";
+            }
+            stream << current_state << ':' << current_player_;
+            return std::to_string(std::hash<std::string>{}(stream.str()));
+        }
+        else if(game_->GetParameters().at("representation").string_value() == "minimal")
+        {
+            stream << current_state << ':' << current_player_;
+            return stream.str();
+        }
+        else
+        {
+            std::cerr << "Unknown representation: " << game_->GetParameters().at("representation").string_value() << "\n";
+            exit(1);
+        }
+    }
 
-    std::ostringstream stream;
-    stream << "@@@\n";
-    stream << "@Graph: \n{";
-    for(int i = 0; i < graph.size(); i++)
-  {
-      stream << i << ": ";
-      for(auto [v, w]: graph[i])
-          stream << "(" << v << ", " << w << ") ";
-      stream << "\n";
-  }
-    stream << "}\n";
-    stream << "@Current state: " << current_state << "\n";
-    stream << "@Current player: " << current_player_ << "\n";
-    stream << "@Number of moves: " << num_moves_ << "\n";
-    stream << "@@@\n";
-  return stream.str();
-}
+    bool MPGEnvironmentState::IsTerminal() const {
+      return num_moves_ >= MaxNumMoves();
+    }
 
-bool MPGState::IsTerminal() const {
-  return num_moves_ >= MaxNumMoves();
-}
-
-    int MPGState::MaxNumMoves() const
+    int MPGEnvironmentState::MaxNumMoves() const
     {
         return game_->GetParameters()["max_moves"].int_value();
     }
@@ -137,92 +235,109 @@ bool MPGState::IsTerminal() const {
             return 0;
     }
 
-    std::vector<double> MPGState::Returns() const
+    std::vector<double> MPGEnvironmentState::Returns() const
     {
-    if (!IsTerminal())
-        return {0.0, 0.0};
-    else
-    {
-        auto S= Player1Return(mean_payoff);
-        return {S, -S};
+        if (!IsTerminal())
+            return {0.0, 0.0};
+        else
+        {
+
+            //SPIEL_CHECK_FLOAT_NEAR(MeanPayoff(M), mean_payoff, 1e-3);
+            auto S= Player1Return(mean_payoff);
+            return {S, -S};
+        }
     }
 
-}
-
-std::string MPGState::InformationStateString(Player player) const {
-  SPIEL_CHECK_GE(player, 0);
-  SPIEL_CHECK_LT(player, num_players_);
-  return HistoryString();
-}
-
-std::string MPGState::ObservationString(Player player) const {
-  SPIEL_CHECK_GE(player, 0);
-  SPIEL_CHECK_LT(player, num_players_);
-  return ToString();
-}
-
-void MPGState::ObservationTensor(Player player,
-                                       absl::Span<float> values) const{
-  SPIEL_CHECK_GE(player, 0);
-  SPIEL_CHECK_LT(player, num_players_);
-
-  // Extract `environment` as a rank 3 tensor.
-  auto environmentSubSpan= values.subspan(0, values.size() - 1);
-  TensorView<3> view(environmentSubSpan, {graph.size(),graph.size(),2}, true);
-    for(int u = 0; u < graph.size(); u++) for(auto [v, w]: graph[u])
-    {
-        view[{u, v, 0}] = v;
-        view[{u, v, 1}] = w;
+    std::string MPGEnvironmentState::InformationStateString(Player player) const {
+      SPIEL_CHECK_GE(player, 0);
+      SPIEL_CHECK_LT(player, num_players_);
+      return HistoryString();
     }
-    // Add the current state.
-    values[values.size() - 1] = current_state;
-}
 
-void MPGState::UndoAction(Player player, Action move) {
-SPIEL_CHECK_GE(move, 0);
-SPIEL_CHECK_LT(move, num_distinct_actions_);
-    float K= static_cast<float>(num_moves_)/static_cast<float>(num_moves_+1);
-    state_history.pop();
-    current_state = state_history.top();
-    mean_payoff = mean_payoff / K - graph[current_state].at(move) / static_cast<float>(num_moves_ + 1);
-    current_player_ = player;
-    outcome_ = kInvalidPlayer;
-    num_moves_ -= 1;
-    history_.pop_back();
-    --move_number_;
-}
-
-std::unique_ptr<State> MPGState::Clone() const {
-  return std::unique_ptr<State>(new MPGState(*this));
-}
-
-std::string MPGMetaGame::ActionToString(Player player,
-                                        Action action_id) const {
-  return absl::StrCat(action_id);
-}
-
-MPGMetaGame::MPGMetaGame(const GameParameters& params)
-    : Game(kGameType, params) , game_info(std::make_unique<MPGGameInfo>())
-    {}
-
-
-
-    MPGMetaGame::MPGMetaGame(const GameParameters &_params, WeightedGraphType _graph, NodeType starting_state): Game(kGameType, _params),
-        game_info(std::make_unique<MPGGameInfo>(std::move(_graph), starting_state))
-    {
+    std::string MPGEnvironmentState::ObservationString(Player player) const {
+      SPIEL_CHECK_GE(player, 0);
+      SPIEL_CHECK_LT(player, num_players_);
+      return ToString();
     }
+
+
+    void MPGEnvironmentState::ObservationTensor(Player player,
+                                                absl::Span<float> values) const{
+      SPIEL_CHECK_GE(player, 0);
+      SPIEL_CHECK_LT(player, num_players_);
+
+      // Extract `environment` as a rank 3 tensor.
+      auto environmentSubSpan= values.subspan(0, values.size() - 1);
+      TensorView<3> view(environmentSubSpan, {environment->graph.size(),environment->graph.size(),2}, true);
+        for(int u = 0; u < environment->graph.size(); u++) for(auto [v, w]: environment->graph[u])
+        {
+            view[{u, v, ObservationAxis::kAdjacencyMatrix}] = v;
+            view[{u, v, ObservationAxis::kWeightsMatrix}] = WeightFromPerspective(w,player);
+        }
+        // Add the current state.
+        values[values.size() - 1] = current_state;
+    }
+
+    void MPGEnvironmentState::UndoAction(Player player, Action move) {
+    SPIEL_CHECK_GE(move, 0);
+    SPIEL_CHECK_LT(move, num_distinct_actions_);
+        float K= static_cast<float>(num_moves_)/static_cast<float>(num_moves_+1);
+        state_history.pop_back();
+        current_state = state_history.back();
+        mean_payoff = mean_payoff / K - environment->graph[current_state].at(move) / static_cast<float>(num_moves_ + 1);
+        current_player_ = player;
+        outcome_ = kInvalidPlayer;
+        num_moves_ -= 1;
+        history_.pop_back();
+        --move_number_;
+    }
+
+    std::unique_ptr<State> MPGEnvironmentState::Clone() const
+    {
+      return std::unique_ptr<State>(new MPGEnvironmentState(*this));
+    }
+
+    MPGEnvironmentState::MPGEnvironmentState(std::shared_ptr<const Game> game, std::shared_ptr<Environment> environment):State(std::move(game)),
+                                                                                                            environment(std::move(environment)),
+                                                                                                              current_player_(0),
+                                                                                                              num_moves_(0),
+                                                                                                              mean_payoff(0)
+     {
+        current_state=this->environment->starting_state;
+        state_history={current_state};
+     }
+
+    WeightType MPGEnvironmentState::GetMeanPayoff() const {
+        return mean_payoff;
+    }
+
+    NodeType MPGEnvironmentState::GetCurrentState() const {
+        return current_state;
+    }
+
+    std::string MPGMetaGame::ActionToString(Player player,
+                                            Action action_id) const
+    {
+      return absl::StrCat(action_id);
+    }
+
+    MPGMetaGame::MPGMetaGame(const GameParameters& params, std::unique_ptr<EnvironmentFactory> environment_factory)
+        : Game(kGameType, params) , environment_factory(std::move(environment_factory))
+        {}
+
 
     std::unique_ptr<State> MPGMetaGame::NewInitialEnvironmentState() const
     {
-        auto newGame= metaFactory->CreateGame(game_parameters_);
-        auto mpgNewGame= dynamic_cast<const MPGMetaGame*>(newGame.get());
-        game_info->graph= mpgNewGame->GetGraph();
-        game_info->starting_state= mpgNewGame->GetStartingState();
-        return NewInitialState();
+        auto state= std::make_unique<MPGEnvironmentState>(shared_from_this(),environment_factory->NewEnvironment(*this));
+        absl::MutexLock lock(&environment_mutex);
+        last_environment = state->environment;
+        return state;
     }
 
-    std::unique_ptr<State> MPGMetaGame::NewInitialState() const {
-        return std::unique_ptr<State>(new MPGState(shared_from_this()));
+    std::unique_ptr<State> MPGMetaGame::NewInitialState() const
+    {
+        absl::MutexLock lock(&environment_mutex);
+        return std::make_unique<MPGEnvironmentState>(shared_from_this(),last_environment);
     }
 
     Game::TensorShapeSpecs MPGMetaGame::ObservationTensorShapeSpecs() const {
@@ -232,6 +347,19 @@ MPGMetaGame::MPGMetaGame(const GameParameters& params)
     int MPGMetaGame::MaxGameLength() const
     {
         return game_parameters_.at("max_moves").int_value();
+    }
+
+    int MPGMetaGame::MaxGraphSize() const {
+        return game_parameters_.at("max_size").int_value();
+    }
+
+    int MPGMetaGame::NumDistinctActions() const {
+        return MaxGraphSize();
+    }
+
+    std::shared_ptr<Environment> MPGMetaGame::GetLastEnvironment() const {
+        absl::MutexLock lock(&environment_mutex);
+        return last_environment;
     }
 
 
@@ -248,7 +376,8 @@ MPGMetaGame::MPGMetaGame(const GameParameters& params)
         return dual();
     }
 
-    WeightedGraphType WeightedGraphType::from_string(const std::string &str) {
+    WeightedGraphType WeightedGraphType::from_string(const std::string &str)
+    {
         std::stringstream  stream(str);
         WeightedGraphType graph;
         int graph_size=0;
@@ -269,7 +398,16 @@ MPGMetaGame::MPGMetaGame(const GameParameters& params)
         return graph;
     }
 
-    MPGGameInfo::MPGGameInfo(WeightedGraphType graph, NodeType starting_state) : graph(std::move(graph)), starting_state(starting_state)
+    AdjacencyMatrixType WeightedGraphType::adjacency_matrix() const
+    {
+        AdjacencyMatrixType adjMatrix(size(), std::vector<bool>(size(), false));
+        for(int u = 0; u < size(); u++) for(auto [v, w]: (*this)[u])
+            adjMatrix[u][v] = true;
+        return adjMatrix;
+    }
+
+    Environment::Environment(WeightedGraphType graph, NodeType starting_state) : graph(std::move(graph)), starting_state(starting_state)
     {
     }
+
 }  // namespace open_spiel
