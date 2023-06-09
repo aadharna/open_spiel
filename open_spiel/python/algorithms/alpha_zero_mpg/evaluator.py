@@ -19,23 +19,16 @@ import numpy as np
 from open_spiel.python.algorithms import mcts
 import pyspiel
 from open_spiel.python.utils import lru_cache
+from open_spiel.python.algorithms.alpha_zero import evaluator as evaluator_lib
+import tensorflow as tf
+from .model import nested_reshape
 
 
-class AlphaZeroEvaluator(mcts.Evaluator):
+class MPGAlphaZeroEvaluator(evaluator_lib.AlphaZeroEvaluator):
   """An AlphaZero MCTS Evaluator."""
 
   def __init__(self, game, model, cache_size=2**16):
-    """An AlphaZero MCTS Evaluator."""
-    if game.num_players() != 2:
-      raise ValueError("Game must be for two players.")
-    game_type = game.get_type()
-    if game_type.reward_model != pyspiel.GameType.RewardModel.TERMINAL:
-      raise ValueError("Game must have terminal rewards.")
-    if game_type.dynamics != pyspiel.GameType.Dynamics.SEQUENTIAL:
-      raise ValueError("Game must have sequential turns.")
-
-    self._model = model
-    self._cache = lru_cache.LRUCache(cache_size)
+    super().__init__(game, model, cache_size)
 
   def cache_info(self):
     return self._cache.info()
@@ -43,16 +36,17 @@ class AlphaZeroEvaluator(mcts.Evaluator):
   def clear_cache(self):
     self._cache.clear()
 
-  def _inference(self, state):
+  def _inference(self, game_state):
     # Make a singleton batch
-    obs = np.expand_dims(state.observation_tensor(), 0)
-    mask = np.expand_dims(state.legal_actions_mask(), 0)
+    environment,state=nested_reshape(game_state.observation_tensor(), self.game.observation_tensor_shapes_list())
+    environment = np.expand_dims(environment, 0)
+    state = np.expand_dims(state, 0)
 
     # ndarray isn't hashable
-    cache_key = obs.tobytes() + mask.tobytes()
-
-    value, policy = self._cache.make(
-        cache_key, lambda: self._model.inference(obs, mask))
+    cache_key = (game_state.current_player(),int(state))
+    with tf.device("/cpu:0"):
+      value, policy = self._cache.make(
+          cache_key, lambda: self._model.inference(environment,state))
 
     return value[0, 0], policy[0]  # Unpack batch
 
@@ -68,3 +62,4 @@ class AlphaZeroEvaluator(mcts.Evaluator):
       # Returns the probabilities for all actions.
       _, policy = self._inference(state)
       return [(action, policy[action]) for action in state.legal_actions()]
+

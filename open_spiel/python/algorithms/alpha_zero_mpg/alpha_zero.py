@@ -46,26 +46,32 @@ import traceback
 import numpy as np
 
 from open_spiel.python.algorithms import mcts
-from open_spiel.python.algorithms.alpha_zero import evaluator as evaluator_lib
-from open_spiel.python.algorithms.alpha_zero import model as model_lib
+from open_spiel.python.algorithms.alpha_zero_mpg import evaluator as evaluator_lib
+from open_spiel.python.algorithms.alpha_zero_mpg import model as model_lib
 import pyspiel
+
+from open_spiel.python.algorithms.alpha_zero_mpg.model import nested_reshape
 from open_spiel.python.utils import data_logger
 from open_spiel.python.utils import file_logger
 from open_spiel.python.utils import spawn
 from open_spiel.python.utils import stats
+from open_spiel.python.algorithms.alpha_zero.alpha_zero_v2 import Buffer,Config
+import tensorflow as tf
+
 
 # Time to wait for processes to join.
 JOIN_WAIT_DELAY = 0.001
 
 
+
 class TrajectoryState(object):
   """A particular point along a trajectory."""
 
-  def __init__(self, observation, current_player, legals_mask, action, policy,
+  def __init__(self, environment,state, current_player, action, policy,
                value):
-    self.observation = observation
+    self.environment = environment
+    self.state = state
     self.current_player = current_player
-    self.legals_mask = legals_mask
     self.action = action
     self.policy = policy
     self.value = value
@@ -82,78 +88,10 @@ class Trajectory(object):
     self.states.append((information_state, action, policy))
 
 
-class Buffer(object):
-  """A fixed size buffer that keeps the newest values."""
 
-  def __init__(self, max_size):
-    self.max_size = max_size
-    self.data = []
-    self.total_seen = 0  # The number of items that have passed through.
-
-  def __len__(self):
-    return len(self.data)
-
-  def __bool__(self):
-    return bool(self.data)
-
-  def append(self, val):
-    return self.extend([val])
-
-  def extend(self, batch):
-    batch = list(batch)
-    self.total_seen += len(batch)
-    self.data.extend(batch)
-    self.data[:-self.max_size] = []
-
-  def sample(self, count):
-    return random.sample(self.data, count)
-
-
-class Config(collections.namedtuple(
-    "Config", [
-        "game",
-        "path",
-        "learning_rate",
-        "weight_decay",
-        "train_batch_size",
-        "replay_buffer_size",
-        "replay_buffer_reuse",
-        "max_steps",
-        "checkpoint_freq",
-        "actors",
-        "evaluators",
-        "evaluation_window",
-        "eval_levels",
-
-        "uct_c",
-        "max_simulations",
-        "policy_alpha",
-        "policy_epsilon",
-        "temperature",
-        "temperature_drop",
-
-        "nn_model",
-        "nn_width",
-        "nn_depth",
-        "observation_shape",
-        "output_size",
-
-        "quiet",
-    ])):
-  """A config for the model/experiment."""
-  pass
-
-
-def _init_model_from_config(config):
-  return model_lib.Model.build_model(
-      config.nn_model,
-      config.observation_shape,
-      config.output_size,
-      config.nn_width,
-      config.nn_depth,
-      config.weight_decay,
-      config.learning_rate,
-      config.path)
+#TODO: add a function to load from config
+def _init_model_from_config(config,game):
+  return model_lib.MPGModel(config,game)
 
 
 def watcher(fn):
@@ -216,7 +154,8 @@ def _play_game(logger, game_num, game, bots, temperature, temperature_drop):
       action = random_state.choice(action_list, p=prob_list)
       state.apply_action(action)
     else:
-      root = bots[state.current_player()].mcts_search(state)
+      with tf.device("/cpu:0"):
+        root = bots[state.current_player()].mcts_search(state)
       policy = np.zeros(game.num_distinct_actions())
       for c in root.children:
         policy[c.action] = c.explore_count
@@ -227,13 +166,11 @@ def _play_game(logger, game_num, game, bots, temperature, temperature_drop):
       else:
         action = np.random.choice(len(policy), p=policy)
       trajectory.states.append(
-          TrajectoryState(state.observation_tensor(), state.current_player(),
-                          state.legal_actions_mask(), action, policy,
-                          root.total_reward / root.explore_count))
+          TrajectoryState(*nested_reshape(state.observation_tensor(),game.observation_tensor_shapes_list()), state.current_player(),
+                        action, policy, root.total_reward / root.explore_count))
       action_str = state.action_to_string(state.current_player(), action)
       actions.append(action_str)
-      logger.opt_print("Player {} sampled action: {}".format(
-          state.current_player(), action_str))
+      logger.opt_print("Player {} sampled action: {}".format(state.current_player(), action_str))
       state.apply_action(action)
   logger.opt_print("Next state:\n{}".format(state))
 
@@ -254,26 +191,27 @@ def update_checkpoint(logger, queue, model, az_evaluator):
   if path:
     logger.print("Inference cache:", az_evaluator.cache_info())
     logger.print("Loading checkpoint", path)
-    model.load_checkpoint(path)
+    model.load_latest_checkpoint()
     az_evaluator.clear_cache()
   elif path is not None:  # Empty string means stop this process.
-    return False
-  return True
+    return False,model
+  return True,model
 
 
 @watcher
 def actor(*, config, game, logger, queue):
   """An actor process runner that generates games and returns trajectories."""
   logger.print("Initializing model")
-  model = _init_model_from_config(config)
+  model = _init_model_from_config(config,game)
   logger.print("Initializing bots")
-  az_evaluator = evaluator_lib.AlphaZeroEvaluator(game, model)
+  az_evaluator = evaluator_lib.MPGAlphaZeroEvaluator(game, model)
   bots = [
       _init_bot(config, game, az_evaluator, False),
       _init_bot(config, game, az_evaluator, False),
   ]
   for game_num in itertools.count():
-    if not update_checkpoint(logger, queue, model, az_evaluator):
+    has_element,model=update_checkpoint(logger, queue, model, az_evaluator)
+    if not has_element:
       return
     queue.put(_play_game(logger, game_num, game, bots, config.temperature,
                          config.temperature_drop))
@@ -284,13 +222,14 @@ def evaluator(*, game, config, logger, queue):
   """A process that plays the latest checkpoint vs standard MCTS."""
   results = Buffer(config.evaluation_window)
   logger.print("Initializing model")
-  model = _init_model_from_config(config)
+  model = _init_model_from_config(config,game)
   logger.print("Initializing bots")
-  az_evaluator = evaluator_lib.AlphaZeroEvaluator(game, model)
+  az_evaluator = evaluator_lib.MPGAlphaZeroEvaluator(game, model)
   random_evaluator = mcts.RandomRolloutEvaluator()
 
   for game_num in itertools.count():
-    if not update_checkpoint(logger, queue, model, az_evaluator):
+    has_element,model=update_checkpoint(logger, queue, model, az_evaluator)
+    if not has_element:
       return
 
     az_player = game_num % 2
@@ -328,11 +267,11 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
   replay_buffer = Buffer(config.replay_buffer_size)
   learn_rate = config.replay_buffer_size // config.replay_buffer_reuse
   logger.print("Initializing model")
-  model = _init_model_from_config(config)
+  model = _init_model_from_config(config,game)
   logger.print("Model type: %s(%s, %s)" % (config.nn_model, config.nn_width,
                                            config.nn_depth))
-  logger.print("Model size:", model.num_trainable_variables, "variables")
-  save_path = model.save_checkpoint(0)
+  logger.print("Model size:", model.count_trainable_variables(), "variables")
+  save_path = model.save_checkpoint_counter(0)
   logger.print("Initial checkpoint:", save_path)
   broadcast_fn(save_path)
 
@@ -380,8 +319,7 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
         outcomes.add(2)
 
       replay_buffer.extend(
-          model_lib.TrainInput(
-              s.observation, s.legals_mask, s.policy, p1_outcome)
+          model_lib.TrainInput(s.environment,s.state, s.policy, p1_outcome)
           for s in trajectory.states)
 
       for stage in range(stage_count):
@@ -399,13 +337,14 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
   def learn(step):
     """Sample from the replay buffer, update weights and save a checkpoint."""
     losses = []
-    for _ in range(len(replay_buffer) // config.train_batch_size):
-      data = replay_buffer.sample(config.train_batch_size)
-      losses.append(model.update(data))
-
+    #for _ in range(len(replay_buffer) // config.train_batch_size):
+    #  data = replay_buffer.sample(config.train_batch_size)
+    #  losses.append(model.update(data))
+    data = replay_buffer.sample(len(replay_buffer))
+    losses.append(model.update(data))
     # Always save a checkpoint, either for keeping or for loading the weights to
     # the actors. It only allows numbers, so use -1 as "latest".
-    save_path = model.save_checkpoint(
+    save_path = model.save_checkpoint_counter(
         step if step % config.checkpoint_freq == 0 else -1)
     losses = sum(losses, model_lib.Losses(0, 0, 0)) / len(losses)
     logger.print(losses)
@@ -498,8 +437,12 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
 def alpha_zero(config: Config):
   """Start all the worker processes for a full alphazero setup."""
   game = pyspiel.load_game(config.game)
+  if game.observation_tensor_shape_specs() == pyspiel.TensorShapeSpecs.VECTOR:
+      shape=game.observation_tensor_shape()
+  else:
+      shape=game.observation_tensor_shapes_list()
   config = config._replace(
-      observation_shape=game.observation_tensor_shape(),
+      observation_shape=shape,
       output_size=game.num_distinct_actions())
 
   print("Starting game", config.game)

@@ -175,7 +175,8 @@ class ModelV2:
         y={"policy_targets":batch.policy, "value_targets":batch.value}
         log=self.model.fit(x, y, batch_size=self.config.train_batch_size, epochs=3, verbose=1,
                            callbacks=[L2LossHistoryCallback(self.model),keras.callbacks.CSVLogger(self.config.path+"/log.csv",append=True)])
-        return sum([Losses(x,y,z) for x,y,z in zip(log.history["policy_targets_loss"], log.history["value_targets_loss"], log.history["l2_loss"])],Losses(0,0,0))
+        return Losses(np.mean(log.history["policy_targets_loss"]), np.mean(log.history["value_targets_loss"]),
+                      np.mean(log.history["l2_loss"]))
 
 
 class MPGModel(ModelV2):
