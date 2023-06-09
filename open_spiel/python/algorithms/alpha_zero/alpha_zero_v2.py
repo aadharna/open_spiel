@@ -53,10 +53,12 @@ from open_spiel.python.utils import data_logger
 from open_spiel.python.utils import file_logger
 from open_spiel.python.utils import spawn
 from open_spiel.python.utils import stats
+import tensorflow as tf
 
 
 # Time to wait for processes to join.
 JOIN_WAIT_DELAY = 0.001
+
 
 
 class TrajectoryState(object):
@@ -213,7 +215,8 @@ def _play_game(logger, game_num, game, bots, temperature, temperature_drop):
       action = random_state.choice(action_list, p=prob_list)
       state.apply_action(action)
     else:
-      root = bots[state.current_player()].mcts_search(state)
+      with tf.device("/cpu:0"):
+        root = bots[state.current_player()].mcts_search(state)
       policy = np.zeros(game.num_distinct_actions())
       for c in root.children:
         policy[c.action] = c.explore_count
@@ -251,7 +254,7 @@ def update_checkpoint(logger, queue, model, az_evaluator):
   if path:
     logger.print("Inference cache:", az_evaluator.cache_info())
     logger.print("Loading checkpoint", path)
-    model=model_lib.ModelV2.from_checkpoint(path,model.config)
+    model.load_latest_checkpoint()
     az_evaluator.clear_cache()
   elif path is not None:  # Empty string means stop this process.
     return False,model
@@ -270,8 +273,8 @@ def actor(*, config, game, logger, queue):
       _init_bot(config, game, az_evaluator, False),
   ]
   for game_num in itertools.count():
-    ret,model=update_checkpoint(logger, queue, model, az_evaluator)
-    if not ret:
+    has_element,model=update_checkpoint(logger, queue, model, az_evaluator)
+    if not has_element:
       return
     queue.put(_play_game(logger, game_num, game, bots, config.temperature,
                          config.temperature_drop))
@@ -288,8 +291,8 @@ def evaluator(*, game, config, logger, queue):
   random_evaluator = mcts.RandomRolloutEvaluator()
 
   for game_num in itertools.count():
-    ret,model=update_checkpoint(logger, queue, model, az_evaluator)
-    if not ret:
+    has_element,model=update_checkpoint(logger, queue, model, az_evaluator)
+    if not has_element:
       return
 
     az_player = game_num % 2
@@ -380,7 +383,7 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
 
       replay_buffer.extend(
           model_lib.TrainInput(
-              s.observation, s.legals_mask, s.policy, p1_outcome)
+              np.reshape(s.observation,game.observation_tensor_shape()), s.legals_mask, s.policy, p1_outcome)
           for s in trajectory.states)
 
       for stage in range(stage_count):
@@ -398,10 +401,11 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
   def learn(step):
     """Sample from the replay buffer, update weights and save a checkpoint."""
     losses = []
-    for _ in range(len(replay_buffer) // config.train_batch_size):
-      data = replay_buffer.sample(config.train_batch_size)
-      losses.append(model.update(data))
-
+    #for _ in range(len(replay_buffer) // config.train_batch_size):
+    #  data = replay_buffer.sample(config.train_batch_size)
+    #  losses.append(model.update(data))
+    data = replay_buffer.sample(len(replay_buffer))
+    losses.append(model.update(data))
     # Always save a checkpoint, either for keeping or for loading the weights to
     # the actors. It only allows numbers, so use -1 as "latest".
     save_path = model.save_checkpoint_counter(

@@ -96,7 +96,7 @@ def main(_):
         quiet=FLAGS.quiet,
     )
     game = pyspiel.load_game(FLAGS.game)
-    model = model_lib.ModelV2(config)
+    model = model_lib.ModelV2(config,game)
     model.model.save(os.path.join(config.path,config.graph_def))
 
     if FLAGS.verbose:

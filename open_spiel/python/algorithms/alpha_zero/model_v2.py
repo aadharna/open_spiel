@@ -1,6 +1,6 @@
 import collections
 import os
-from functools import cached_property
+from functools import cached_property, cache
 from typing import Sequence
 
 import numpy as np
@@ -68,46 +68,36 @@ class ModelV2:
 
     def __init__(self, config,game):
         # game params
+        self.checkpoint = None
         self.config = config
-        input_shape = config.observation_shape
         self.action_size=game.num_distinct_actions()
-        architecture = config.architecture
 
         # Neural Net
-        match architecture:
+        self.model=self.build()
+        self.model.add_loss(l2_loss(self.model,alpha=1))
+
+        self.model.compile(loss={"policy_targets":"categorical_crossentropy", "value_targets":"mean_squared_error"},
+                           optimizer=keras.optimizers.Adam(config.learning_rate))
+
+
+    def build(self) -> tf.keras.Model:
+        input_shape = self.config.observation_shape
+        match self.config.architecture:
             case "mlp":
                 self.input_state = keras.layers.Input(shape=input_shape,
-                                                      name="environment")  # s: batch_size x board_x x board_y
+                                                      name="input")  # s: batch_size x board_x x board_y
+                self.input_mask=keras.layers.Input(shape=(self.action_size,),name="legals_mask")
                 flattened = keras.layers.Flatten(name="flatten")(self.input_state)
                 y = keras.layers.BatchNormalization()(flattened)
                 y = keras.layers.Dense(128, activation="relu")(y)
-                z = keras.layers.BatchNormalization(beta_regularizer=keras.regularizers.l2(1),
-                                                    gamma_regularizer=keras.regularizers.l2(1))(y)
-                self.pi = keras.layers.Dense(self.action_size, activation="softmax", name="pi")(
-                    z)  # batch_size x self.action_size
-                self.v = keras.layers.Dense(1, activation="tanh", name="v")(z)  # batch_size x 1
-                self.model = keras.Model(inputs=self.input_state, outputs=[self.pi, self.v])
-            case "mpgnet":
-                self.input_environment = keras.layers.Input(shape=input_shape,
-                                                            name="environment")  # s: batch_size x board_x x board_y
-                self.input_state = keras.layers.Input(shape=(), name="state")
-                state_reshape = keras.layers.Reshape((1,))(self.input_state)
-                flattened = keras.layers.Flatten(name="flatten")(self.input_environment)
-                stack = keras.layers.Concatenate()([flattened, state_reshape])
-                y = keras.layers.BatchNormalization()(stack)
-                y = keras.layers.Dense(128)(y)
                 z = keras.layers.BatchNormalization()(y)
-                self.pi = keras.layers.Dense(self.action_size, activation="softmax", name="pi")(
-                    z)  # batch_size x self.action_size
-                self.v = keras.layers.Dense(1, activation="tanh", name="v")(z)  # batch_size x 1
-                self.model = keras.models.Model(inputs=[self.input_environment, self.input_state],
-                                                outputs=[self.pi, self.v])
+                self.pi = keras.layers.Dense(self.action_size, activation="softmax", name="policy_targets_unmasked")(z)  # batch_size x self.action_size
+                self.pi = keras.layers.Multiply(name="policy_targets")([self.pi,self.input_mask])
+                self.v = keras.layers.Dense(1, activation="tanh", name="value_targets")(z)  # batch_size x 1
+                model = keras.Model(inputs=[self.input_state,self.input_mask], outputs=[self.v,self.pi])
             case _:
-                raise ValueError(f"Invalid architecture {architecture}")
-        self.model.add_loss(l2_loss(self.model,alpha=1))
-        self.model.compile(loss={"pi":"categorical_crossentropy", "v":"mean_squared_error"},
-                           optimizer=keras.optimizers.Adam(config.learning_rate))
-
+                raise ValueError(f"Invalid architecture {self.config.architecture}")
+        return model
     @classmethod
     def from_checkpoint(cls, path: str,config):
         """
@@ -124,7 +114,7 @@ class ModelV2:
         instance.config=config
         return instance
 
-    @cached
+    @cache
     def count_trainable_variables(self):
         return self.model.count_params()
 
@@ -133,9 +123,9 @@ class ModelV2:
     Saves the model to a checkpoint
     :param path: path to the checkpoint
     """
-        checkpoint = tf.train.Checkpoint(self.model)
-        checkpoint.save(path)
-        return path
+        if self.checkpoint is None:
+            self.checkpoint = tf.train.Checkpoint(self.model)
+        return self.checkpoint.save(path)
 
     def load_checkpoint(self, path: str):
         """
@@ -148,6 +138,12 @@ class ModelV2:
         checkpoint.restore(path)
         return path
 
+    def load_latest_checkpoint(self):
+        """
+        Loads the latest checkpoint
+        :return:
+        """
+        return self.load_checkpoint(tf.train.latest_checkpoint(os.path.join(self.config.path, "checkpoints")))
 
     def save_checkpoint_counter(self, counter):
         """
@@ -156,24 +152,47 @@ class ModelV2:
     """
         return self.save_checkpoint(os.path.join(self.config.path, "checkpoints", f"model_{counter}"))
 
-    def predict(self, env, state):
+    def predict(self, *inputs):
         """
     :param env: the environment
     :param state: the state
     :return: pi, v
     """
-        return self.model.predict([env, state])
+        return self.model.predict(inputs,verbose = 0)
 
     def loss_function(self):
         return self.model.loss
 
-    def inference(self, env, state):
-        return self.predict(env, state)
+    def inference(self, *inputs):
+        return self.predict(*inputs)
     def update(self, train_inputs: Sequence[TrainInput]):
         """Runs a training step."""
         batch = TrainInput.stack(train_inputs)
+#        print(batch.observation.shape)
 
         # Run a training step and get the losses.
-        log=self.model.fit(batch.observation, {"pi":batch.policy, "v":batch.value}, batch_size=self.config.batch_size, epochs=1, verbose=0,
+        x={"input":batch.observation,"legals_mask":batch.legals_mask}
+        y={"policy_targets":batch.policy, "value_targets":batch.value}
+        log=self.model.fit(x, y, batch_size=self.config.train_batch_size, epochs=3, verbose=1,
                            callbacks=[L2LossHistoryCallback(self.model),keras.callbacks.CSVLogger(self.config.path+"/log.csv",append=True)])
-        return Losses(log.history["pi_loss"][0], log.history["v_loss"][0], log.history["l2_loss"][0])
+        return sum([Losses(x,y,z) for x,y,z in zip(log.history["policy_targets_loss"], log.history["value_targets_loss"], log.history["l2_loss"])],Losses(0,0,0))
+
+
+class MPGModel(ModelV2):
+    def build(self):
+        env_shape,state_shape = self.config.observation_shape
+        self.input_environment = keras.layers.Input(shape=env_shape,
+                                                    name="environment")  # s: batch_size x board_x x board_y
+        self.input_state = keras.layers.Input(shape=state_shape, name="state")
+        state_reshape = keras.layers.Reshape((1,))(self.input_state)
+        flattened = keras.layers.Flatten(name="flatten")(self.input_environment)
+        stack = keras.layers.Concatenate()([flattened, state_reshape])
+        y = keras.layers.BatchNormalization()(stack)
+        y = keras.layers.Dense(128)(y)
+        z = keras.layers.BatchNormalization()(y)
+        self.pi = keras.layers.Dense(self.action_size, activation="softmax", name="pi")(
+            z)  # batch_size x self.action_size
+        self.v = keras.layers.Dense(1, activation="tanh", name="v")(z)  # batch_size x 1
+        model = keras.models.Model(inputs=[self.input_environment, self.input_state],
+                                   outputs=[self.pi, self.v])
+        return model

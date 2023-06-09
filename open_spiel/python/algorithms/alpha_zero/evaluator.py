@@ -19,6 +19,7 @@ import numpy as np
 from open_spiel.python.algorithms import mcts
 import pyspiel
 from open_spiel.python.utils import lru_cache
+import tensorflow as tf
 
 
 class AlphaZeroEvaluator(mcts.Evaluator):
@@ -36,6 +37,7 @@ class AlphaZeroEvaluator(mcts.Evaluator):
 
     self._model = model
     self._cache = lru_cache.LRUCache(cache_size)
+    self.game=game
 
   def cache_info(self):
     return self._cache.info()
@@ -45,14 +47,14 @@ class AlphaZeroEvaluator(mcts.Evaluator):
 
   def _inference(self, state):
     # Make a singleton batch
-    obs = np.expand_dims(state.observation_tensor(), 0)
+    obs = np.expand_dims(np.reshape(state.observation_tensor(),self.game.observation_tensor_shape()), 0)
     mask = np.expand_dims(state.legal_actions_mask(), 0)
 
     # ndarray isn't hashable
     cache_key = obs.tobytes() + mask.tobytes()
-
-    value, policy = self._cache.make(
-        cache_key, lambda: self._model.inference(obs, mask))
+    with tf.device("/cpu:0"):
+      value, policy = self._cache.make(
+          cache_key, lambda: self._model.inference(obs, mask))
 
     return value[0, 0], policy[0]  # Unpack batch
 
@@ -68,3 +70,51 @@ class AlphaZeroEvaluator(mcts.Evaluator):
       # Returns the probabilities for all actions.
       _, policy = self._inference(state)
       return [(action, policy[action]) for action in state.legal_actions()]
+
+
+def convert_to_shapes(flat_array,shapes_list):
+  arrays=[]
+  start=0
+  for shape in shapes_list:
+    size=np.prod(shape)
+    arrays.append(np.reshape(flat_array[start:start+size],shape))
+    start+=size
+  if start!=len(flat_array):
+    raise ValueError("Shapes don't match")
+  return arrays
+
+class GeneralizedAlphaZeroEvaluator(AlphaZeroEvaluator):
+
+  #TODO: Add support for ignoring masked actions
+
+  def _inference(self, state):
+    if self.game.observation_tensor_shape_specs() == pyspiel.TensorShapeSpecs.VECTOR:
+      obs = np.expand_dims(state.observation_tensor(), 0)
+      mask = np.expand_dims(state.legal_actions_mask(), 0)
+
+      # ndarray isn't hashable
+      cache_key = obs.tobytes() + mask.tobytes()
+
+      value, policy = self._cache.make(
+        cache_key, lambda: self._model.inference(obs, mask))
+
+      return value[0, 0], policy[0]  # Unpack batch
+    elif self.game.observation_tensor_shape_specs() == pyspiel.TensorShapeSpecs.NESTED_LIST:
+      observations = convert_to_shapes(state.observation_tensor(),self.game.observation_tensor_shapes_list())
+      observations = [np.expand_dims(obs,0) for obs in observations]
+      cache_keys=sum([obs.tobytes() for obs in observations],b'')
+      value, policy = self._cache.make( cache_keys, lambda: self._model.inference(*observations))
+      return value[0, 0], policy[0]  # Unpack batch
+    else:
+        raise ValueError("Unknown observation tensor shape specs")
+    # Make a singleton batch
+
+
+class MPGAlphaZeroEvaluator(GeneralizedAlphaZeroEvaluator):
+  def _inference(self, state):
+      observations = convert_to_shapes(state.observation_tensor(),self.game.observation_tensor_shapes_list())
+      observations = [np.expand_dims(obs,0) for obs in observations]
+      cache_keys=sum([obs.tobytes() for obs in observations],b'')
+      value, policy = self._cache.make( cache_keys, lambda: self._model.inference(*observations))
+      return value[0, 0], policy[0]  # Unpack batch
+    # Make a singleton batch
