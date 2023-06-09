@@ -360,7 +360,7 @@ PYBIND11_MODULE(pyspiel, m) {
       .def("distribution_support", &State::DistributionSupport)
       .def("update_distribution", &State::UpdateDistribution)
       .def("mean_field_population", &State::MeanFieldPopulation);
-  py::enum_<Game::TensorShapeSpecs>(state, "TensorShapeSpecs")
+  py::enum_<Game::TensorShapeSpecs>(m, "TensorShapeSpecs")
           .value("UNKNOWN", Game::TensorShapeSpecs::kUnknown)
             .value("VECTOR", Game::TensorShapeSpecs::kVector)
             .value("NESTED_LIST", Game::TensorShapeSpecs::kNestedList)
@@ -397,6 +397,9 @@ PYBIND11_MODULE(pyspiel, m) {
       .def("observation_tensor_layout", &Game::ObservationTensorLayout)
       .def("observation_tensor_size", &Game::ObservationTensorSize)
       .def("observation_tensor_shape_specs", &Game::ObservationTensorShapeSpecs)
+      .def("observation_tensor_shapes_list", &Game::ObservationTensorsShapeList)
+      .def("observation_tensor_shapes_map",
+           &Game::ObservationTensorsShapeMap)
     .def("policy_tensor_shape", &Game::PolicyTensorShape)
       .def("deserialize_state", &Game::DeserializeState)
       .def("max_game_length", &Game::MaxGameLength)

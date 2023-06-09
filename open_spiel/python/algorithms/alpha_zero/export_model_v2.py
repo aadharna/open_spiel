@@ -13,6 +13,8 @@
 # limitations under the License.
 
 """Export the model's Tensorflow graph as a protobuf."""
+import collections
+import os
 
 from absl import app
 from absl import flags
@@ -37,19 +39,75 @@ flags.mark_flag_as_required("graph_def")
 from keras.utils.layer_utils import count_params
 
 
-def main(_):
-  game = pyspiel.load_game(FLAGS.game)
-  model = model_lib.ModelV2()
-  model.model.save(FLAGS.graph_def)
+class Config(collections.namedtuple(
+    "Config", [
+        "game",
+        "path",
+        "graph_def", # "graph_def" is the name of the file that will be saved
+        "learning_rate",
+        "weight_decay",
+        "checkpoint_freq",
+        "actors",
+        "evaluators",
+        "evaluation_window",
+        "eval_levels",
+        "nn_model",
+        "nn_width",
+        "nn_depth",
+        "observation_shape",
+        "output_size",
 
-  if FLAGS.verbose:
-    print("Game:", FLAGS.game)
-    print("Model type: %s(%s, %s)" % (FLAGS.nn_model, FLAGS.nn_width,
-                                      FLAGS.nn_depth))
-    print("Model size:", count_params(model.model.trainable_variables), "variables")
-    print("Variables:")
-    for v in model.model.trainable_variables:
-        print("  ", v.name, v.shape)
+        "quiet",
+    ])):
+    """A config for the model/experiment."""
+    pass
+
+    @property
+    def architecture(self):
+        return  self.nn_model
+
+    @property
+    def max_actions(self):
+        return self.game.max_actions()
+
+    @property
+    def num_players(self):
+        return self.game.num_players()
+
+
+
+def main(_):
+    config = Config(
+        game=FLAGS.game,
+        path=FLAGS.path,
+        learning_rate=FLAGS.learning_rate,
+        weight_decay=FLAGS.weight_decay,
+        checkpoint_freq=FLAGS.checkpoint_freq,
+        actors=FLAGS.actors,
+        evaluators=FLAGS.evaluators,
+        evaluation_window=FLAGS.evaluation_window,
+        eval_levels=FLAGS.eval_levels,
+        nn_model=FLAGS.nn_model,
+        nn_width=FLAGS.nn_width,
+        nn_depth=FLAGS.nn_depth,
+        observation_shape=None,
+        output_size=None,
+
+        quiet=FLAGS.quiet,
+    )
+    game = pyspiel.load_game(FLAGS.game)
+    model = model_lib.ModelV2(config)
+    model.model.save(os.path.join(config.path,config.graph_def))
+
+    if FLAGS.verbose:
+        print("Game:", FLAGS.game)
+        print("Model type: %s(%s, %s)" % (FLAGS.nn_model, FLAGS.nn_width,
+                                          FLAGS.nn_depth))
+        print("Model size:", count_params(model.model.trainable_variables), "variables")
+        print("Variables:")
+        for v in model.model.trainable_variables:
+            print("  ", v.name, v.shape)
+
 
 if __name__ == "__main__":
-  app.run(main)
+    app.run(main)

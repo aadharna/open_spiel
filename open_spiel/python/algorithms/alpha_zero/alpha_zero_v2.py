@@ -53,8 +53,7 @@ from open_spiel.python.utils import data_logger
 from open_spiel.python.utils import file_logger
 from open_spiel.python.utils import spawn
 from open_spiel.python.utils import stats
-import tensorflow as tf
-keras = tf.keras
+
 
 # Time to wait for processes to join.
 JOIN_WAIT_DELAY = 0.001
@@ -143,12 +142,15 @@ class Config(collections.namedtuple(
         "quiet",
     ])):
   """A config for the model/experiment."""
+  @property
+  def architecture(self):
+      return self.nn_model
   pass
 
 
 #TODO: add a function to load from config
-def _init_model_from_config(config):
-  return model_lib.ModelV2()
+def _init_model_from_config(config,game):
+  return model_lib.ModelV2(config,game)
 
 
 def watcher(fn):
@@ -249,7 +251,7 @@ def update_checkpoint(logger, queue, model, az_evaluator):
   if path:
     logger.print("Inference cache:", az_evaluator.cache_info())
     logger.print("Loading checkpoint", path)
-    model=model_lib.ModelV2.from_checkpoint(path)
+    model=model_lib.ModelV2.from_checkpoint(path,model.config)
     az_evaluator.clear_cache()
   elif path is not None:  # Empty string means stop this process.
     return False,model
@@ -260,7 +262,7 @@ def update_checkpoint(logger, queue, model, az_evaluator):
 def actor(*, config, game, logger, queue):
   """An actor process runner that generates games and returns trajectories."""
   logger.print("Initializing model")
-  model = _init_model_from_config(config)
+  model = _init_model_from_config(config,game)
   logger.print("Initializing bots")
   az_evaluator = evaluator_lib.AlphaZeroEvaluator(game, model)
   bots = [
@@ -280,7 +282,7 @@ def evaluator(*, game, config, logger, queue):
   """A process that plays the latest checkpoint vs standard MCTS."""
   results = Buffer(config.evaluation_window)
   logger.print("Initializing model")
-  model = _init_model_from_config(config)
+  model = _init_model_from_config(config,game)
   logger.print("Initializing bots")
   az_evaluator = evaluator_lib.AlphaZeroEvaluator(game, model)
   random_evaluator = mcts.RandomRolloutEvaluator()
@@ -325,11 +327,11 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
   replay_buffer = Buffer(config.replay_buffer_size)
   learn_rate = config.replay_buffer_size // config.replay_buffer_reuse
   logger.print("Initializing model")
-  model = _init_model_from_config(config)
+  model = _init_model_from_config(config,game)
   logger.print("Model type: %s(%s, %s)" % (config.nn_model, config.nn_width,
                                            config.nn_depth))
-  logger.print("Model size:", model.num_trainable_variables, "variables")
-  save_path = model.save_checkpoint(0)
+  logger.print("Model size:", model.count_trainable_variables(), "variables")
+  save_path = model.save_checkpoint_counter(0)
   logger.print("Initial checkpoint:", save_path)
   broadcast_fn(save_path)
 
@@ -402,7 +404,7 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
 
     # Always save a checkpoint, either for keeping or for loading the weights to
     # the actors. It only allows numbers, so use -1 as "latest".
-    save_path = model.save_checkpoint(
+    save_path = model.save_checkpoint_counter(
         step if step % config.checkpoint_freq == 0 else -1)
     losses = sum(losses, model_lib.Losses(0, 0, 0)) / len(losses)
     logger.print(losses)
@@ -495,8 +497,12 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
 def alpha_zero(config: Config):
   """Start all the worker processes for a full alphazero setup."""
   game = pyspiel.load_game(config.game)
+  if game.observation_tensor_shape_specs() == pyspiel.TensorShapeSpecs.VECTOR:
+      shape=game.observation_tensor_shape()
+  else:
+      shape=game.observation_tensor_shapes_list()
   config = config._replace(
-      observation_shape=game.observation_tensor_shape(),
+      observation_shape=shape,
       output_size=game.num_distinct_actions())
 
   print("Starting game", config.game)
