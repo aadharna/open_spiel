@@ -16,6 +16,8 @@
 
 from absl import app
 from absl import flags
+from argparse import Namespace
+
 
 from open_spiel.python.algorithms.alpha_zero_mpg import alpha_zero as alpha_zero
 from open_spiel.python.algorithms.alpha_zero_mpg import model as model_lib
@@ -55,6 +57,7 @@ flags.DEFINE_integer(
 flags.DEFINE_integer("max_steps", 0, "How many learn steps before exiting.")
 flags.DEFINE_bool("quiet", True, "Don't show the moves as they're played.")
 flags.DEFINE_bool("verbose", False, "Show the MCTS stats of possible moves.")
+flags.DEFINE_float("regularization", 0.001, "L2 regularization strength.")
 
 FLAGS = flags.FLAGS
 
@@ -70,7 +73,7 @@ def main(unused_argv):
       replay_buffer_reuse=FLAGS.replay_buffer_reuse,
       max_steps=FLAGS.max_steps,
       checkpoint_freq=FLAGS.checkpoint_freq,
-
+      regularization=FLAGS.regularization,
       actors=FLAGS.actors,
       evaluators=FLAGS.evaluators,
       uct_c=FLAGS.uct_c,

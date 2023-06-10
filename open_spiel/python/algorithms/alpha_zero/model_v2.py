@@ -14,14 +14,14 @@ keras = tf.keras
 
 valid_model_types = ["mlp", "conv2d", "resnet" , "mpgnet"]
 
-def l2_loss(model,alpha=1):
+def l2_loss(model,alpha:float=1):
     return lambda :alpha*tf.add_n([tf.nn.l2_loss(v) for v in model.trainable_variables])
 
 class L2LossHistoryCallback(tf.keras.callbacks.Callback):
-    def __init__(self, model):
+    def __init__(self, model,regularization=0.01):
         super().__init__()
         self.model = model
-        self.l2_loss=l2_loss(model)
+        self.l2_loss=l2_loss(model,regularization)
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
@@ -71,16 +71,18 @@ class ModelV2:
         self.checkpoint = None
         self.config = config
         self.action_size=game.num_distinct_actions()
+        regularization=config.regularization
 
         # Neural Net
-        self.model=self.build()
-        self.model.add_loss(l2_loss(self.model,alpha=1))
+        self.model=self.build(config,game)
+        self.regularization=regularization
+        self.model.add_loss(l2_loss(self.model,alpha=regularization))
 
         self.model.compile(loss={"policy_targets":"categorical_crossentropy", "value_targets":"mean_squared_error"},
                            optimizer=keras.optimizers.Adam(config.learning_rate))
 
 
-    def build(self) -> tf.keras.Model:
+    def build(self,config,game) -> tf.keras.Model:
         input_shape = self.config.observation_shape
         match self.config.architecture:
             case "mlp":
@@ -165,35 +167,26 @@ class ModelV2:
 
     def inference(self, *inputs):
         return self.predict(*inputs)
+
+    def _get_batch(self, train_inputs: Sequence[TrainInput]):
+        """Converts a list of TrainInputs to a batch."""
+        return TrainInput.stack(train_inputs)
+
+    def _get_input(self,batch):
+        return {"input":batch.observation,"legals_mask":batch.legals_mask}
+
+    def _get_output(self,batch):
+        return {"policy_targets":batch.policy, "value_targets":batch.value}
+
     def update(self, train_inputs: Sequence[TrainInput]):
         """Runs a training step."""
-        batch = TrainInput.stack(train_inputs)
+        batch = self._get_batch(train_inputs)
 #        print(batch.observation.shape)
 
         # Run a training step and get the losses.
-        x={"input":batch.observation,"legals_mask":batch.legals_mask}
-        y={"policy_targets":batch.policy, "value_targets":batch.value}
+        x=self._get_input(batch)
+        y=self._get_output(batch)
         log=self.model.fit(x, y, batch_size=self.config.train_batch_size, epochs=3, verbose=1,
-                           callbacks=[L2LossHistoryCallback(self.model),keras.callbacks.CSVLogger(self.config.path+"/log.csv",append=True)])
+                           callbacks=[L2LossHistoryCallback(self.model,self.regularization),keras.callbacks.CSVLogger(self.config.path+"/log.csv",append=True)])
         return Losses(np.mean(log.history["policy_targets_loss"]), np.mean(log.history["value_targets_loss"]),
                       np.mean(log.history["l2_loss"]))
-
-
-class MPGModel(ModelV2):
-    def build(self):
-        env_shape,state_shape = self.config.observation_shape
-        self.input_environment = keras.layers.Input(shape=env_shape,
-                                                    name="environment")  # s: batch_size x board_x x board_y
-        self.input_state = keras.layers.Input(shape=state_shape, name="state")
-        state_reshape = keras.layers.Reshape((1,))(self.input_state)
-        flattened = keras.layers.Flatten(name="flatten")(self.input_environment)
-        stack = keras.layers.Concatenate()([flattened, state_reshape])
-        y = keras.layers.BatchNormalization()(stack)
-        y = keras.layers.Dense(128)(y)
-        z = keras.layers.BatchNormalization()(y)
-        self.pi = keras.layers.Dense(self.action_size, activation="softmax", name="pi")(
-            z)  # batch_size x self.action_size
-        self.v = keras.layers.Dense(1, activation="tanh", name="v")(z)  # batch_size x 1
-        model = keras.models.Model(inputs=[self.input_environment, self.input_state],
-                                   outputs=[self.pi, self.v])
-        return model

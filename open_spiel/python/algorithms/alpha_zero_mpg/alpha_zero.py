@@ -137,11 +137,14 @@ def _init_bot(config, game, evaluator_, evaluation):
       dont_return_chance_node=True)
 
 
-def _play_game(logger, game_num, game, bots, temperature, temperature_drop):
+def _play_game(logger, game_num, game, bots, temperature, temperature_drop,new_environment=True):
   """Play one game, return the trajectory."""
   trajectory = Trajectory()
   actions = []
-  state = game.new_initial_state()
+  if new_environment:
+    state = game.new_initial_environment_state()
+  else:
+    state = game.new_initial_state()
   random_state = np.random.RandomState()
   logger.opt_print(" Starting game {} ".format(game_num).center(60, "-"))
   logger.opt_print("Initial state:\n{}".format(state))

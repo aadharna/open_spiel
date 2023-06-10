@@ -116,6 +116,7 @@ class Config(collections.namedtuple(
     "Config", [
         "game",
         "path",
+        "regularization",
         "learning_rate",
         "weight_decay",
         "train_batch_size",

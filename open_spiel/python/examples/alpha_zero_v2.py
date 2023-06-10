@@ -35,6 +35,8 @@ flags.DEFINE_float("policy_epsilon", 0.25, "What noise epsilon to use.")
 flags.DEFINE_float("policy_alpha", 1, "What dirichlet noise alpha to use.")
 flags.DEFINE_float("temperature", 1,
                    "Temperature for final move selection.")
+flags.DEFINE_float("regularization", 0.001, "L2 regularization strength.")
+
 flags.DEFINE_integer("temperature_drop", 10,  # Less than AZ due to short games.
                      "Drop the temperature to 0 after this many moves.")
 flags.DEFINE_enum("nn_model", "resnet", model_lib.valid_model_types,
@@ -70,7 +72,7 @@ def main(unused_argv):
       replay_buffer_reuse=FLAGS.replay_buffer_reuse,
       max_steps=FLAGS.max_steps,
       checkpoint_freq=FLAGS.checkpoint_freq,
-
+      regularization=FLAGS.regularization,
       actors=FLAGS.actors,
       evaluators=FLAGS.evaluators,
       uct_c=FLAGS.uct_c,
