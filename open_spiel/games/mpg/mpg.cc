@@ -265,13 +265,14 @@ namespace open_spiel::mpg {
                                                 absl::Span<float> values) const{
       SPIEL_CHECK_GE(player, 0);
       SPIEL_CHECK_LT(player, num_players_);
-
+      auto mpg_game= dynamic_cast<const MPGMetaGame *>(game_.get());
       // Extract `environment` as a rank 3 tensor.
       auto environmentSubSpan= values.subspan(0, values.size() - 1);
-      TensorView<3> view(environmentSubSpan, {environment->graph.size(),environment->graph.size(),2}, true);
+      std::fill(environmentSubSpan.begin(), environmentSubSpan.end(), 0.0f);
+      TensorView<3> view(environmentSubSpan, {mpg_game->MaxGraphSize(),mpg_game->MaxGraphSize(),2}, true);
         for(int u = 0; u < environment->graph.size(); u++) for(auto [v, w]: environment->graph[u])
         {
-            view[{u, v, ObservationAxis::kAdjacencyMatrix}] = v;
+            view[{u, v, ObservationAxis::kAdjacencyMatrix}] = 1;
             view[{u, v, ObservationAxis::kWeightsMatrix}] = WeightFromPerspective(w,player);
         }
         // Add the current state.

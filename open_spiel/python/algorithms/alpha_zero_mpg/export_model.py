@@ -19,7 +19,7 @@ import os
 from absl import app
 from absl import flags
 
-from open_spiel.python.algorithms.alpha_zero import model_v2 as model_lib
+from open_spiel.python.algorithms.alpha_zero_mpg import model as model_lib
 import pyspiel
 
 FLAGS = flags.FLAGS
@@ -32,6 +32,7 @@ flags.DEFINE_integer("nn_width", 2 ** 7, "How wide should the network be.")
 flags.DEFINE_integer("nn_depth", 10, "How deep should the network be.")
 flags.DEFINE_float("learning_rate", 0.0001, "Learning rate used for training")
 flags.DEFINE_float("weight_decay", 0.0001, "L2 regularization strength.")
+flags.DEFINE_float("regularization", 0.0001, "L2 regularization strength.")
 flags.DEFINE_bool("verbose", False, "Print information about the model.")
 flags.mark_flag_as_required("game")
 flags.mark_flag_as_required("path")
@@ -46,18 +47,13 @@ class Config(collections.namedtuple(
         "graph_def", # "graph_def" is the name of the file that will be saved
         "learning_rate",
         "weight_decay",
-        "checkpoint_freq",
-        "actors",
-        "evaluators",
-        "evaluation_window",
-        "eval_levels",
+        "regularization",
         "nn_model",
         "nn_width",
         "nn_depth",
+        "verbose",
         "observation_shape",
-        "output_size",
-
-        "quiet",
+        "output_size"
     ])):
     """A config for the model/experiment."""
     pass
@@ -78,25 +74,28 @@ class Config(collections.namedtuple(
 
 def main(_):
     config = Config(
+        graph_def=FLAGS.graph_def,
         game=FLAGS.game,
         path=FLAGS.path,
         learning_rate=FLAGS.learning_rate,
         weight_decay=FLAGS.weight_decay,
-        checkpoint_freq=FLAGS.checkpoint_freq,
-        actors=FLAGS.actors,
-        evaluators=FLAGS.evaluators,
-        evaluation_window=FLAGS.evaluation_window,
-        eval_levels=FLAGS.eval_levels,
         nn_model=FLAGS.nn_model,
         nn_width=FLAGS.nn_width,
         nn_depth=FLAGS.nn_depth,
+        regularization=FLAGS.regularization,
+        verbose=FLAGS.verbose,
         observation_shape=None,
-        output_size=None,
-
-        quiet=FLAGS.quiet,
+        output_size=None
     )
     game = pyspiel.load_game(FLAGS.game)
-    model = model_lib.ModelV2(config,game)
+    if game.observation_tensor_shape_specs() == pyspiel.TensorShapeSpecs.VECTOR:
+        shape=game.observation_tensor_shape()
+    else:
+        shape=game.observation_tensor_shapes_list()
+    config = config._replace(
+        observation_shape=shape,
+        output_size=game.num_distinct_actions())
+    model = model_lib.MPGModel(config,game)
     model.model.save(os.path.join(config.path,config.graph_def))
 
     if FLAGS.verbose:

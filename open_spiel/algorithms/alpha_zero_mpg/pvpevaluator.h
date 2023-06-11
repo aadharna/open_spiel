@@ -19,8 +19,8 @@
 #include <vector>
 
 #include "open_spiel/abseil-cpp/absl/hash/hash.h"
-#include "open_spiel/algorithms/alpha_zero/device_manager.h"
-#include "open_spiel/algorithms/alpha_zero/vpnet.h"
+#include "device_manager.h"
+#include "pvpnet.h"
 #include "open_spiel/algorithms/mcts.h"
 #include "open_spiel/spiel.h"
 #include "open_spiel/utils/lru_cache.h"
@@ -28,14 +28,13 @@
 #include "open_spiel/utils/thread.h"
 #include "open_spiel/utils/threaded_queue.h"
 
-namespace open_spiel {
-namespace algorithms {
+namespace open_spiel::algorithms::mpg {
 
-class VPNetEvaluator : public Evaluator {
+class PVPNetEvaluator : public Evaluator {
  public:
-  explicit VPNetEvaluator(DeviceManager* device_manager, int batch_size,
+  explicit PVPNetEvaluator(DeviceManager* device_manager, int batch_size,
                           int threads, int cache_size, int cache_shards = 1);
-  ~VPNetEvaluator() override;
+  ~PVPNetEvaluator() override;
 
   // Return a value of this state for each player.
   std::vector<double> Evaluate(const State& state) override;
@@ -51,18 +50,18 @@ class VPNetEvaluator : public Evaluator {
   open_spiel::HistogramNumbered BatchSizeHistogram();
 
  private:
-  VPNetModel::InferenceOutputs Inference(const State& state);
+  PVPNetModel::InferenceOutputs Inference(const State& state);
 
   void Runner();
 
   DeviceManager& device_manager_;
-  std::vector<std::unique_ptr<LRUCache<uint64_t, VPNetModel::InferenceOutputs>>>
+  std::vector<std::unique_ptr<LRUCache<uint64_t, PVPNetModel::InferenceOutputs>>>
       cache_;
   const int batch_size_;
 
   struct QueueItem {
-    VPNetModel::InferenceInputs inputs;
-    std::promise<VPNetModel::InferenceOutputs>* prom;
+    PVPNetModel::InferenceInputs inputs;
+    std::promise<PVPNetModel::InferenceOutputs>* prom;
   };
 
   ThreadedQueue<QueueItem> queue_;
@@ -75,7 +74,6 @@ class VPNetEvaluator : public Evaluator {
   open_spiel::HistogramNumbered batch_size_hist_;
 };
 
-}  // namespace algorithms
 }  // namespace open_spiel
 
 #endif  // OPEN_SPIEL_ALGORITHMS_ALPHA_ZERO_VPEVALUATOR_H_

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "open_spiel/algorithms/alpha_zero/alpha_zero.h"
+#include "parametric_alpha_zero.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -29,9 +29,9 @@
 #include "open_spiel/abseil-cpp/absl/synchronization/mutex.h"
 #include "open_spiel/abseil-cpp/absl/time/clock.h"
 #include "open_spiel/abseil-cpp/absl/time/time.h"
-#include "open_spiel/algorithms/alpha_zero/device_manager.h"
-#include "open_spiel/algorithms/alpha_zero/vpevaluator.h"
-#include "open_spiel/algorithms/alpha_zero/vpnet.h"
+#include "device_manager.h"
+#include "pvpevaluator.h"
+#include "pvpnet.h"
 #include "open_spiel/algorithms/mcts.h"
 #include "open_spiel/spiel.h"
 #include "open_spiel/spiel_utils.h"
@@ -45,7 +45,7 @@
 #include "open_spiel/utils/thread.h"
 #include "open_spiel/utils/threaded_queue.h"
 
-namespace open_spiel::algorithms {
+namespace open_spiel::algorithms::mpg {
 
 struct Trajectory {
   struct State {
@@ -137,7 +137,7 @@ std::unique_ptr<MCTSBot> InitAZBot(
 // An actor thread runner that generates games and returns trajectories.
 void actor(const open_spiel::Game& game, const AlphaZeroConfig& config, int num,
            ThreadedQueue<Trajectory>* trajectory_queue,
-           std::shared_ptr<VPNetEvaluator> vp_eval,
+           std::shared_ptr<PVPNetEvaluator> vp_eval,
            StopToken* stop) {
   std::unique_ptr<Logger> logger;
   if (num < 20) {  // Limit the number of open files.
@@ -214,7 +214,7 @@ class EvalResults {
 // A thread that plays vs standard MCTS.
 void evaluator(const open_spiel::Game& game, const AlphaZeroConfig& config,
                int num, EvalResults* results,
-               std::shared_ptr<VPNetEvaluator> vp_eval, StopToken* stop) {
+               std::shared_ptr<PVPNetEvaluator> vp_eval, StopToken* stop) {
   FileLogger logger(config.path, absl::StrCat("evaluator-", num));
   std::mt19937 rng;
   auto rand_evaluator = std::make_shared<RandomRolloutEvaluator>(1, num);
@@ -258,7 +258,7 @@ void evaluator(const open_spiel::Game& game, const AlphaZeroConfig& config,
 void learner(const open_spiel::Game& game,
              const AlphaZeroConfig& config,
              DeviceManager* device_manager,
-             std::shared_ptr<VPNetEvaluator> eval,
+             std::shared_ptr<PVPNetEvaluator> eval,
              ThreadedQueue<Trajectory>* trajectory_queue,
              EvalResults* eval_results,
              StopToken* stop) {
@@ -270,7 +270,7 @@ void learner(const open_spiel::Game& game,
   logger.Print("Running the learner on device %d: %s", device_id,
                device_manager->Get(0, device_id)->Device());
 
-  CircularBuffer<VPNetModel::TrainInputs> replay_buffer(
+  CircularBuffer<PVPNetModel::TrainInputs> replay_buffer(
       config.replay_buffer_size);
   int learn_rate = config.replay_buffer_size / config.replay_buffer_reuse;
   int64_t total_trajectories = 0;
@@ -313,14 +313,18 @@ void learner(const open_spiel::Game& game,
         double p1_outcome = trajectory->returns[0];
         outcomes.Add(p1_outcome > 0 ? 0 : (p1_outcome < 0 ? 1 : 2));
 
-        for (const Trajectory::State& state : trajectory->states) {
-          replay_buffer.Add(
-              VPNetModel::TrainInputs{
-                  state.legal_actions,
-                  state.observation,
+        for (const Trajectory::State& state : trajectory->states)
+        {
+            auto environment=state.observation;
+            int state_=environment.back();
+            environment.pop_back();
+            replay_buffer.Add(
+                  PVPNetModel::TrainInputs{
+                  environment,
+                  state_,
                   state.policy,
                   p1_outcome});
-          num_states += 1;
+            num_states += 1;
         }
 
         for (int stage = 0; stage < stage_count; ++stage) {
@@ -352,7 +356,7 @@ void learner(const open_spiel::Game& game,
 
     last = now;
 
-    VPNetModel::LossInfo losses;
+    PVPNetModel::LossInfo losses;
     {  // Extra scope to return the device for use for inference asap.
       DeviceManager::DeviceLoan learn_model =
           device_manager->Get(config.train_batch_size, device_id);
@@ -435,7 +439,7 @@ void learner(const open_spiel::Game& game,
   }
 }
 
-bool AlphaZeroRandomEnvironment(AlphaZeroConfig config, StopToken* stop) {
+bool AlphaZeroMPG(AlphaZeroConfig config, StopToken* stop) {
   std::shared_ptr<const open_spiel::Game> game =
       open_spiel::LoadGame(config.game);
 
@@ -458,14 +462,14 @@ bool AlphaZeroRandomEnvironment(AlphaZeroConfig config, StopToken* stop) {
   std::cout << "Logging directory: " << config.path << std::endl;
 
   if (config.graph_def.empty()) {
-    config.graph_def = "vpnet.pb";
+    config.graph_def = "PVPNet.pb";
     std::string model_path = absl::StrCat(config.path, "/", config.graph_def);
     if (file::Exists(model_path)) {
       std::cout << "Overwriting existing model: " << model_path << std::endl;
     } else {
       std::cout << "Creating model: " << model_path << std::endl;
     }
-    SPIEL_CHECK_TRUE(CreateGraphDef(
+    SPIEL_CHECK_TRUE(CreateGraphDefMPG(
         *game, config.learning_rate, config.weight_decay,
         config.path, config.graph_def,
         config.nn_model, config.nn_width, config.nn_depth));
@@ -493,7 +497,7 @@ bool AlphaZeroRandomEnvironment(AlphaZeroConfig config, StopToken* stop) {
 
   DeviceManager device_manager;
   for (const absl::string_view& device : absl::StrSplit(config.devices, ',')) {
-    device_manager.AddDevice(VPNetModel(
+    device_manager.AddDevice(PVPNetModel(
         *game, config.path, config.graph_def, std::string(device)));
   }
 
@@ -509,7 +513,7 @@ bool AlphaZeroRandomEnvironment(AlphaZeroConfig config, StopToken* stop) {
     }
   }
 
-  auto eval = std::make_shared<VPNetEvaluator>(
+  auto eval = std::make_shared<PVPNetEvaluator>(
       &device_manager, config.inference_batch_size, config.inference_threads,
       config.inference_cache, (config.actors + config.evaluators) / 16);
 

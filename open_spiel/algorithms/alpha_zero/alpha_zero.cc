@@ -315,7 +315,7 @@ void learner(const open_spiel::Game& game,
 
         for (const Trajectory::State& state : trajectory->states) {
           replay_buffer.Add(
-              VPNetModel::TrainInputs{
+                  VPNetModel::TrainInputs{
                   state.legal_actions,
                   state.observation,
                   state.policy,

@@ -69,6 +69,45 @@ class TensorView {
   const std::array<int, Rank> shape_;
 };
 
+
+    template <int Rank>
+    class TensorViewConst {
+    public:
+        constexpr TensorViewConst(absl::Span<const float> values,
+                             const std::array<int, Rank>& shape)
+                : values_(values), shape_(shape) {
+            SPIEL_CHECK_EQ(size(), values_.size());
+        }
+
+        constexpr int size() const {
+            return std::accumulate(shape_.begin(), shape_.end(), 1,
+                                   std::multiplies<int>());
+        }
+
+
+        constexpr int index(const std::array<int, Rank>& args) const {
+            int ind = 0;
+            for (int i = 0; i < Rank; ++i) {
+                ind = ind * shape_[i] + args[i];
+            }
+            return ind;
+        }
+
+        constexpr const float& operator[](const std::array<int, Rank>& args) const {
+            return values_[index(args)];
+        }
+
+        constexpr int rank() const { return Rank; }
+        constexpr const std::array<int, Rank> shape() const { return shape_; }
+        constexpr int shape(int i) const { return shape_[i]; }
+
+    private:
+        absl::Span<const float> values_;
+        const std::array<int, Rank> shape_;
+    };
+
+
+
 }  // namespace open_spiel
 
 #endif  // OPEN_SPIEL_UTILS_TENSOR_VIEW_H_

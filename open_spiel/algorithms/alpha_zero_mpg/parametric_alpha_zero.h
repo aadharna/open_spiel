@@ -18,7 +18,7 @@
 #include "open_spiel/utils/thread.h"
 #include "open_spiel/utils/json.h"
 
-namespace open_spiel::algorithms {
+namespace open_spiel::algorithms::mpg {
 
 struct AlphaZeroConfig {
   std::string game;
@@ -54,7 +54,7 @@ struct AlphaZeroConfig {
   int eval_levels;
   int max_steps;
 
-  json::Object ToJson() const {
+  [[nodiscard]] json::Object ToJson() const {
     return json::Object({
         {"game", game},
         {"path", path},
@@ -89,7 +89,7 @@ struct AlphaZeroConfig {
   }
 };
 
-bool AlphaZeroRandomEnvironment(AlphaZeroConfig config, StopToken* stop);
+bool AlphaZeroMPG(AlphaZeroConfig config, StopToken* stop);
 
 }  // namespace open_spiel::algorithms
 

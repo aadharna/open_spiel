@@ -114,7 +114,9 @@ namespace open_spiel::mpg
         [[nodiscard]] std::string ObservationString(Player player) const override;
         void ObservationTensor(Player player,
                              absl::Span<float> values) const override;
+
         [[nodiscard]] std::unique_ptr<State> Clone() const override;
+
         void UndoAction(Player player, Action move) override;
         std::vector<Action> LegalActions() const override;
         NodeType StateAt(NodeType cell) const { return cell; }

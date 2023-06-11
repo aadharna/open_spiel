@@ -32,8 +32,7 @@
 #include "tensorflow/core/graph/default_device.h"
 #include "tensorflow/core/protobuf/saver.pb.h"
 
-namespace open_spiel {
-namespace algorithms {
+namespace open_spiel::algorithms {
 
 namespace tf = tensorflow;
 using Tensor = Eigen::Tensor<float, 2, Eigen::RowMajor>;
@@ -223,5 +222,4 @@ VPNetModel::LossInfo VPNetModel::Learn(const std::vector<TrainInputs>& inputs) {
       tf_outputs[2].scalar<float>()(0));
 }
 
-}  // namespace algorithms
 }  // namespace open_spiel

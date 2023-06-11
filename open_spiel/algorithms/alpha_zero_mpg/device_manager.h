@@ -18,9 +18,9 @@
 #include <vector>
 
 #include "open_spiel/abseil-cpp/absl/synchronization/mutex.h"
-#include "open_spiel/algorithms/alpha_zero/vpnet.h"
+#include "pvpnet.h"
 
-namespace open_spiel::algorithms {
+namespace open_spiel::algorithms::mpg {
 
 // Keeps track of a bunch of VPNet models, intended to be one per device, and
 // gives them out based on usage. When you request a device you specify how much
@@ -30,7 +30,7 @@ class DeviceManager {
  public:
   DeviceManager() {}
 
-  void AddDevice(VPNetModel model) {  // Not thread safe.
+  void AddDevice(PVPNetModel model) {  // Not thread safe.
     devices.emplace_back(Device{std::move(model)});
   }
 
@@ -44,15 +44,15 @@ class DeviceManager {
     DeviceLoan& operator=(const DeviceLoan&) = delete;
 
     ~DeviceLoan() { manager_->Return(device_id_, requests_); }
-    VPNetModel* operator->() { return model_; }
+    PVPNetModel* operator->() { return model_; }
 
    private:
-    DeviceLoan(DeviceManager* manager, VPNetModel* model, int device_id,
+    DeviceLoan(DeviceManager* manager, PVPNetModel* model, int device_id,
                int requests)
         : manager_(manager), model_(model), device_id_(device_id),
           requests_(requests) {}
     DeviceManager* manager_;
-    VPNetModel* model_;
+    PVPNetModel* model_;
     int device_id_;
     int requests_;
     friend DeviceManager;
@@ -82,7 +82,7 @@ class DeviceManager {
   }
 
   struct Device {
-    VPNetModel model;
+    PVPNetModel model;
     int requests = 0;
   };
 

@@ -79,7 +79,7 @@ std::vector<VPNetModel::TrainInputs> SolveGame() {
 }
 
 VPNetModel BuildModel(const Game& game, const std::string& nn_model,
-                       bool create_graph) {
+                      bool create_graph) {
   std::string tmp_dir = open_spiel::file::GetTmpDir();
   std::string filename = absl::StrCat(
       "open_spiel_vpnet_test_", nn_model, ".pb");

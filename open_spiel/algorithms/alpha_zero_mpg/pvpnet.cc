@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "open_spiel/algorithms/alpha_zero/vpnet.h"
+#include "pvpnet.h"
 
 #include <algorithm>
 #include <cstring>
@@ -20,7 +20,10 @@
 #include <numeric>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
+#include <iomanip>
+#include <fstream>
 
 #include "open_spiel/abseil-cpp/absl/strings/str_cat.h"
 #include "open_spiel/abseil-cpp/absl/strings/str_join.h"
@@ -31,135 +34,206 @@
 #include "open_spiel/utils/run_python.h"
 #include "tensorflow/core/graph/default_device.h"
 #include "tensorflow/core/protobuf/saver.pb.h"
+#include "tensorflow/core/lib/gtl/array_slice.h"
+#include "utils/tensor_view.h"
 
-namespace open_spiel {
-namespace algorithms {
 
-namespace tf = tensorflow;
-using Tensor = Eigen::Tensor<float, 2, Eigen::RowMajor>;
-using TensorMap = Eigen::TensorMap<Tensor, Eigen::Aligned>;
-using TensorBool = Eigen::Tensor<bool, 2, Eigen::RowMajor>;
-using TensorMapBool = Eigen::TensorMap<TensorBool, Eigen::Aligned>;
 
-bool CreateGraphDef(const Game& game, double learning_rate,
-    double weight_decay, const std::string& path, const std::string& filename,
-    std::string nn_model, int nn_width, int nn_depth, bool verbose) {
-  return RunPython("open_spiel.python.algorithms.alpha_zero.export_model",
-                   {
-                       "--game", absl::StrCat("'", game.ToString(), "'"),  //
-                       "--path", absl::StrCat("'", path, "'"),             //
-                       "--graph_def", filename,                            //
-                       "--learning_rate", absl::StrCat(learning_rate),     //
-                       "--weight_decay", absl::StrCat(weight_decay),       //
-                       "--nn_model", nn_model,                             //
-                       "--nn_depth", absl::StrCat(nn_depth),               //
-                       "--nn_width", absl::StrCat(nn_width),               //
-                       absl::StrCat("--verbose=", verbose ? "true" : "false"),
-                   });
-}
+namespace open_spiel::algorithms::mpg
+{
 
-VPNetModel::VPNetModel(const Game& game, const std::string& path,
+    namespace tf = tensorflow;
+    using Tensor = Eigen::Tensor<float, 2, Eigen::RowMajor>;
+    using TensorMap = Eigen::TensorMap<Tensor, Eigen::Aligned>;
+    using TensorBool = Eigen::Tensor<bool, 2, Eigen::RowMajor>;
+    using TensorMapBool = Eigen::TensorMap<TensorBool, Eigen::Aligned>;
+
+    bool CreateGraphDefMPG(const Game& game, double learning_rate,
+        double weight_decay, const std::string& path, const std::string& filename,
+        std::string nn_model, int nn_width, int nn_depth, bool verbose)
+    {
+      return RunPython("open_spiel.python.algorithms.alpha_zero_mpg.export_model",
+                       {
+                           "--game", absl::StrCat("'", game.ToString(), "'"),  //
+                           "--path", absl::StrCat("'", path, "'"),             //
+                           "--graph_def", filename,                            //
+                           "--learning_rate", absl::StrCat(learning_rate),     //
+                           "--weight_decay", absl::StrCat(weight_decay),       //
+                           "--nn_model", std::move(nn_model),                             //
+                           "--nn_depth", absl::StrCat(nn_depth),               //
+                           "--nn_width", absl::StrCat(nn_width),               //
+                           absl::StrCat("--verbose=", verbose ? "true" : "false"),
+                       });
+    }
+
+    std::vector<std::int64_t> AddBatchDim(const std::vector<int> &shape, int batch_dim) {
+        std::vector<std::int64_t> new_shape = {batch_dim};
+        std::copy(shape.begin(), shape.end(), std::back_inserter(new_shape));
+        return new_shape;
+    }
+
+    std::vector<std::int64_t> AddBatchDim(const std::vector<std::int64_t> &shape, int batch_dim) {
+        std::vector<std::int64_t> new_shape = {batch_dim};
+        std::copy(shape.begin(), shape.end(), std::back_inserter(new_shape));
+        return new_shape;
+    }
+
+    TensorViewConst<3> EnvironmentViewConst(const std::vector<float> &environment_flat,const std::vector<int> & shape)
+    {
+        std::array<int, 3> environment_shape_array;
+        std::copy_n(shape.begin(), 3, environment_shape_array.begin());
+        absl::Span environment_span(environment_flat.data(),environment_flat.size());
+        return {environment_span, environment_shape_array};
+    }
+
+    PVPNetModel::PVPNetModel(const Game& game, const std::string& path,
                        const std::string& file_name, const std::string& device)
     : device_(device),
       path_(path),
-      flat_input_size_(game.ObservationTensorSize()),
-      num_actions_(game.NumDistinctActions()) {
-  // Some assumptions that we can remove eventually. The value net returns
-  // a single value in terms of player 0 and the game is assumed to be zero-sum,
-  // so player 1 can just be -value.
-  SPIEL_CHECK_EQ(game.NumPlayers(), 2);
-  SPIEL_CHECK_EQ(game.GetType().utility, GameType::Utility::kZeroSum);
+      num_actions_(game.NumDistinctActions())
+    {
+        if(game.ObservationTensorShapeSpecs() != Game::TensorShapeSpecs::kNestedList)
+            SpielFatalError("ObservationTensorShapeSpecs must be kNestedList for PPVPNetModel");
+        auto nested_shape= game.ObservationTensorsShapeList();
+        max_size_ = nested_shape.at(0).at(0);
+        SPIEL_CHECK_EQ(nested_shape.size(), 2);
+        SPIEL_CHECK_EQ(nested_shape.at(0).size(), 3);
+        SPIEL_CHECK_LE(nested_shape.at(1).size(), 1);
+        environment_shape_ = nested_shape.at(0);
+        state_shape_ = nested_shape.at(1);
 
-  std::string model_path = absl::StrCat(path, "/", file_name);
-  model_meta_graph_contents_ = file::ReadContentsFromFile(model_path, "r");
+        // Some assumptions that we can remove eventually. The value net returns
+      // a single value in terms of player 0 and the game is assumed to be zero-sum,
+      // so player 1 can just be -value.
+      SPIEL_CHECK_EQ(game.NumPlayers(), 2);
+      SPIEL_CHECK_EQ(game.GetType().utility, GameType::Utility::kZeroSum);
 
-  TF_CHECK_OK(
-      ReadBinaryProto(tf::Env::Default(), model_path, &meta_graph_def_));
+      std::string model_path = absl::StrCat(path, "/", file_name);
+      model_meta_graph_contents_ = file::ReadContentsFromFile(model_path, "r");
+      //TF_CHECK_OK(
+      //    ReadBinaryProto(tf::Env::Default(), model_path, &meta_graph_def_));
 
-  tf::graph::SetDefaultDevice(device, meta_graph_def_.mutable_graph_def());
+      model_bundle_= std::make_unique<tf::SavedModelBundle>();
+        TF_CHECK_OK(tensorflow::LoadSavedModel(
+                tf_opts_,
+                run_options,
+                model_path,
+                {"serve"},
+                model_bundle_.get()));
 
-  if (tf_session_ != nullptr) {
-    TF_CHECK_OK(tf_session_->Close());
-  }
+        meta_graph_def_ = &model_bundle_->meta_graph_def;
+        auto signatures = model_bundle_->GetSignatures();
+        SPIEL_CHECK_TRUE(signatures.contains("serving_default"));
+        auto [input,input_mapper,output,output_mapper] = ExtractInputOutputNames(*model_bundle_, "serving_default");
+        input_names_ = std::move(input);
+        output_names_ = std::move(output);
+        input_name_map_ = std::move(input_mapper);
+        output_name_map_ = std::move(output_mapper);
+        std::set<std::string> expected_input_names = {"environment","state"};
+        std::set<std::string> expected_output_names = {"value_targets","policy_targets"};
+        if(input_names_ != expected_input_names)
+            SpielFatalError(absl::StrCat("Input names do not match expected names. Got: ", absl::StrJoin(input_names_, ",")));
+        if(output_names_ != expected_output_names)
+            SpielFatalError(absl::StrCat("Output names do not match expected names. Got: ", absl::StrJoin(output_names_, ",")));
 
-  // create a new session
-  TF_CHECK_OK(NewSession(tf_opts_, &tf_session_));
+      //tf::graph::SetDefaultDevice(device, meta_graph_def_->mutable_graph_def());
 
-  // Load graph into session
-  TF_CHECK_OK(tf_session_->Create(meta_graph_def_.graph_def()));
+      if (tf_session_ != nullptr) {
+        TF_CHECK_OK(tf_session_->Close());
+      }
 
-  // Initialize our variables
-  TF_CHECK_OK(tf_session_->Run({}, {}, {"init_all_vars_op"}, nullptr));
-}
+      // create a new session
+      tf_session_ = model_bundle_->GetSession();
 
-std::string VPNetModel::SaveCheckpoint(int step) {
-  std::string full_path = absl::StrCat(path_, "/checkpoint-", step);
-  tensorflow::Tensor checkpoint_path(tf::DT_STRING, tf::TensorShape());
-  checkpoint_path.scalar<tensorflow::tstring>()() = full_path;
-  TF_CHECK_OK(tf_session_->Run(
-      {{meta_graph_def_.saver_def().filename_tensor_name(), checkpoint_path}},
-      {}, {meta_graph_def_.saver_def().save_tensor_name()}, nullptr));
-  // Writing a checkpoint from python writes the metagraph file, but c++
-  // doesn't, so do it manually to make loading checkpoints easier.
-  file::File(absl::StrCat(full_path, ".meta"), "w").Write(
-      model_meta_graph_contents_);
-  return full_path;
-}
+      // Load graph into session
+      //TF_CHECK_OK(tf_session_->Create(meta_graph_def_->graph_def()));
 
-void VPNetModel::LoadCheckpoint(const std::string& path) {
+      // Initialize our variables
+      //TF_CHECK_OK(tf_session_->Run({}, {}, {"init_all_vars_op"}, nullptr));
+    }
+
+    std::string PVPNetModel::SaveCheckpoint(int step)
+    {
+      std::string full_path = absl::StrCat(path_, "/checkpoint-", step);
+      tensorflow::Tensor checkpoint_path(tf::DT_STRING, tf::TensorShape());
+      checkpoint_path.scalar<tensorflow::tstring>()() = full_path;
+      TF_CHECK_OK(tf_session_->Run(
+          {{meta_graph_def_->saver_def().filename_tensor_name(), checkpoint_path}},
+          {}, {meta_graph_def_->saver_def().save_tensor_name()}, nullptr));
+      // Writing a checkpoint from python writes the metagraph file, but c++
+      // doesn't, so do it manually to make loading checkpoints easier.
+      file::File(absl::StrCat(full_path, ".meta"), "w").Write(
+          model_meta_graph_contents_);
+      return full_path;
+    }
+
+void PVPNetModel::LoadCheckpoint(const std::string& path) {
   tf::Tensor checkpoint_path(tf::DT_STRING, tf::TensorShape());
   checkpoint_path.scalar<tensorflow::tstring>()() = path;
   TF_CHECK_OK(tf_session_->Run(
-      {{meta_graph_def_.saver_def().filename_tensor_name(), checkpoint_path}},
-      {}, {meta_graph_def_.saver_def().restore_op_name()}, nullptr));
+      {{meta_graph_def_->saver_def().filename_tensor_name(), checkpoint_path}},
+      {}, {meta_graph_def_->saver_def().restore_op_name()}, nullptr));
 }
 
-std::vector<VPNetModel::InferenceOutputs> VPNetModel::Inference(
+std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(
     const std::vector<InferenceInputs>& inputs) {
   int inference_batch_size = inputs.size();
 
   // Fill the inputs and mask
-  tensorflow::Tensor tf_inf_inputs(
-      tf::DT_FLOAT, tf::TensorShape({inference_batch_size, flat_input_size_}));
-  tensorflow::Tensor tf_inf_legal_mask(
-      tf::DT_BOOL, tf::TensorShape({inference_batch_size, num_actions_}));
+  tf::Tensor tf_environment_inputs(
+      tf::DT_FLOAT, tf::TensorShape(AddBatchDim(environment_shape_, inference_batch_size)));
+  auto environment = tf_environment_inputs.tensor<float,4>();
 
-  TensorMap inputs_matrix = tf_inf_inputs.matrix<float>();
-  TensorMapBool mask_matrix = tf_inf_legal_mask.matrix<bool>();
+  tf::Tensor tf_state_inputs(
+      tf::DT_FLOAT, tf::TensorShape(AddBatchDim(state_shape_, inference_batch_size)));
+  auto state=tf_state_inputs.matrix<float>();
 
-  for (int b = 0; b < inference_batch_size; ++b) {
+
+  for (int b = 0; b < inference_batch_size; ++b)
     // Zero initialize the sparse inputs.
-    for (int a = 0; a < num_actions_; ++a) {
-      mask_matrix(b, a) = 0;
-    }
-    for (Action action : inputs[b].legal_actions) {
-      mask_matrix(b, action) = 1;
-    }
-    for (int i = 0; i < inputs[b].observations.size(); ++i) {
-      inputs_matrix(b, i) = inputs[b].observations[i];
-    }
+  {
+      auto environment_view= EnvironmentViewConst(inputs[b].environment,environment_shape_);
+      for(int i=0; i < environment_view.shape(0); i++)
+      {
+          for (int j = 0; j < environment_view.shape(1); j++) for (int k = 0; k < environment_view.shape(2); k++)
+            environment(b, i, j, k) = environment_view[{i, j, k}];
+      }
+      state(b,0) = inputs[b].state;
   }
+
+    InputSpecification input_specification;
+    input_specification.emplace_back(input_name_map_["environment"], tf_environment_inputs);
+    input_specification.emplace_back(input_name_map_["state"], tf_state_inputs);
+//    input_specification.emplace_back("training", tensorflow::Tensor(false));
+
+    OutputSpecification output_specification;
+    output_specification.emplace_back(output_name_map_["value_targets"]);
+    output_specification.emplace_back(output_name_map_["policy_targets"]);
 
   // Run the inference
   std::vector<tensorflow::Tensor> tf_outputs;
-  TF_CHECK_OK(tf_session_->Run(
-      {{"input", tf_inf_inputs}, {"legals_mask", tf_inf_legal_mask},
-       {"training", tensorflow::Tensor(false)}},
-      {"policy_softmax", "value_out"}, {}, &tf_outputs));
+  TF_CHECK_OK(tf_session_->Run(input_specification,
+      output_specification, {}, &tf_outputs));
 
   TensorMap policy_matrix = tf_outputs[0].matrix<float>();
   TensorMap value_matrix = tf_outputs[1].matrix<float>();
 
   std::vector<InferenceOutputs> out;
   out.reserve(inference_batch_size);
-  for (int b = 0; b < inference_batch_size; ++b) {
+  for (int b = 0; b < inference_batch_size; ++b)
+  {
     double value = value_matrix(b, 0);
-
     ActionsAndProbs state_policy;
-    state_policy.reserve(inputs[b].legal_actions.size());
-    for (Action action : inputs[b].legal_actions) {
-      state_policy.push_back({action, policy_matrix(b, action)});
-    }
+
+    auto environment_view=EnvironmentViewConst(inputs[b].environment,environment_shape_);
+    std::vector<int> legal_actions;
+    //Extracts legal actions
+    for(int i=0;i<num_actions_;i++) if(environment_view[{inputs[b].state,i,EnvironmentAxis::kAdjacencyAxis}] == 0)
+        legal_actions.push_back(i);
+
+    state_policy.reserve(legal_actions.size());
+    for (Action action : legal_actions)
+      state_policy.emplace_back(action, policy_matrix(b, action));
 
     out.push_back({value, state_policy});
   }
@@ -167,54 +241,55 @@ std::vector<VPNetModel::InferenceOutputs> VPNetModel::Inference(
   return out;
 }
 
-VPNetModel::LossInfo VPNetModel::Learn(const std::vector<TrainInputs>& inputs) {
+PVPNetModel::LossInfo PVPNetModel::Learn(const std::vector<TrainInputs>& inputs) {
   int training_batch_size = inputs.size();
 
-  tensorflow::Tensor tf_train_inputs(
-      tf::DT_FLOAT, tf::TensorShape({training_batch_size, flat_input_size_}));
-  tensorflow::Tensor tf_train_legal_mask(
-      tf::DT_BOOL, tf::TensorShape({training_batch_size, num_actions_}));
+  tensorflow::Tensor tf_environment_inputs(
+      tf::DT_FLOAT, tf::TensorShape(AddBatchDim(environment_shape_,training_batch_size)));
+    tensorflow::Tensor tf_state_inputs(
+            tf::DT_FLOAT, tf::TensorShape(AddBatchDim(state_shape_,training_batch_size)));
   tensorflow::Tensor tf_policy_targets(
-      tf::DT_FLOAT, tf::TensorShape({training_batch_size, num_actions_}));
+      tf::DT_FLOAT, tf::TensorShape({training_batch_size,num_actions_}));
   tensorflow::Tensor tf_value_targets(
       tf::DT_FLOAT, tf::TensorShape({training_batch_size, 1}));
 
   // Fill the inputs and mask
-  TensorMap inputs_matrix = tf_train_inputs.matrix<float>();
-  TensorMapBool mask_matrix = tf_train_legal_mask.matrix<bool>();
-  TensorMap policy_targets_matrix = tf_policy_targets.matrix<float>();
-  TensorMap value_targets_matrix = tf_value_targets.matrix<float>();
+  auto environment_inputs = tf_environment_inputs.tensor<float,4>();
+  auto state_inputs=tf_state_inputs.matrix<float>();
+  TensorMap policy_targets = tf_policy_targets.matrix<float>();
+  TensorMap value_targets = tf_value_targets.matrix<float>();
 
   for (int b = 0; b < training_batch_size; ++b) {
     // Zero initialize the sparse inputs.
-    for (int a = 0; a < num_actions_; ++a) {
-      mask_matrix(b, a) = 0;
-      policy_targets_matrix(b, a) = 0;
+    for (int a = 0; a < num_actions_; ++a)
+      policy_targets(b, a) = 0;
+
+
+
+    auto environment_view= EnvironmentViewConst(inputs[b].environment,environment_shape_);
+    for(int i=0; i < environment_view.shape(0); i++)
+    {
+        for (int j = 0; j < environment_view.shape(1); j++) for (int k = 0; k < environment_view.shape(2); k++)
+            environment_inputs(b, i, j, k) = environment_view[{i, j, k}];
+        state_inputs(b,0) = inputs[b].state;
     }
 
-    for (Action action : inputs[b].legal_actions) {
-      mask_matrix(b, action) = 1;
-    }
 
-    for (int a = 0; a < inputs[b].observations.size(); ++a) {
-      inputs_matrix(b, a) = inputs[b].observations[a];
-    }
-
-    for (const auto& [action, prob] : inputs[b].policy) {
-      policy_targets_matrix(b, action) = prob;
-    }
-
-    value_targets_matrix(b, 0) = inputs[b].value;
+    for (const auto& [action, prob] : inputs[b].policy)
+      policy_targets(b, action) = prob;
+    value_targets(b, 0) = inputs[b].value;
   }
-
+  InputSpecification input_specification;
+    input_specification.emplace_back(input_name_map_["environment"], tf_environment_inputs);
+    input_specification.emplace_back(input_name_map_["state"], tf_state_inputs);
   // Run a training step and get the losses.
   std::vector<tensorflow::Tensor> tf_outputs;
-  TF_CHECK_OK(tf_session_->Run({{"input", tf_train_inputs},
-                                {"legals_mask", tf_train_legal_mask},
+  TF_CHECK_OK(tf_session_->Run({{"environment", tf_environment_inputs},
+                                {"state", tf_state_inputs},
                                 {"policy_targets", tf_policy_targets},
                                 {"value_targets", tf_value_targets},
                                 {"training", tensorflow::Tensor(true)}},
-                               {"policy_loss", "value_loss", "l2_reg_loss"},
+                               {"policy_loss", "value_loss", "l2_loss"},
                                {"train"}, &tf_outputs));
 
   return LossInfo(
@@ -223,5 +298,29 @@ VPNetModel::LossInfo VPNetModel::Learn(const std::vector<TrainInputs>& inputs) {
       tf_outputs[2].scalar<float>()(0));
 }
 
-}  // namespace algorithms
+    InputOutputNamesType ExtractInputOutputNames(const tensorflow::SavedModelBundle &bundle,const std::string& signature_name)
+    {
+        InputOutputNamesType names;
+        auto signature = bundle.GetSignatures();
+        auto it = signature.find(signature_name);
+        if (it == signature.end())
+            SpielFatalError(absl::StrCat("Signature ", signature_name, " not found in the model."));
+        else
+        {
+            for(const auto & input : signature.at(signature_name).inputs())
+            {
+                names.input_names.emplace(input.first);
+                names.input_name_mapper[input.first]=input.second.name();
+            }
+            for(const auto & output : signature.at(signature_name).outputs())
+            {
+                names.output_names.emplace(output.first);
+                names.output_name_mapper[output.first]=output.second.name();
+            }
+
+            return names;
+        }
+
+    }
+
 }  // namespace open_spiel

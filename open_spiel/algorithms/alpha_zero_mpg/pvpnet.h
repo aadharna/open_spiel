@@ -12,28 +12,44 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef OPEN_SPIEL_ALGORITHMS_ALPHA_ZERO_VPNET_H_
-#define OPEN_SPIEL_ALGORITHMS_ALPHA_ZERO_VPNET_H_
+#ifndef OPEN_SPIEL_ALGORITHMS_ALPHA_ZERO_PVPNet_H_
+#define OPEN_SPIEL_ALGORITHMS_ALPHA_ZERO_PVPNet_H_
 
 #include "open_spiel/spiel.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
+#include <tensorflow/cc/saved_model/loader.h>
 #include "tensorflow/core/public/session.h"
+#include "utils/tensor_view.h"
 
-namespace open_spiel {
-namespace algorithms {
+namespace open_spiel::algorithms::mpg {
 
+
+std::vector<std::int64_t> AddBatchDim(const std::vector<int>& shape,int batch_dim=-1);
+std::vector<std::int64_t> AddBatchDim(const std::vector<std::int64_t>& shape,int batch_dim=-1);
+TensorViewConst<3> EnvironmentViewConst(const std::vector<float> &environment_flat,const std::vector<int>& shape);
 // Spawn a python interpreter to call export_model.py.
 // There are three options for nn_model: mlp, conv2d and resnet.
 // The nn_width is the number of hidden units for the mlp, and filters for
 // conv/resnet. The nn_depth is number of layers for all three.
-bool CreateGraphDef(
+bool CreateGraphDefMPG(
     const Game& game, double learning_rate,
     double weight_decay, const std::string& path, const std::string& filename,
     std::string nn_model, int nn_width, int nn_depth, bool verbose = false);
 
 
-class VPNetModel {
+    struct InputOutputNamesType
+    {
+        std::set<std::string> input_names;
+        std::map<std::string,std::string> input_name_mapper;
+        std::set<std::string> output_names;
+        std::map<std::string,std::string> output_name_mapper;
+
+    };
+    InputOutputNamesType ExtractInputOutputNames(const tensorflow::SavedModelBundle &bundle,const std::string& signature = "serving_default");
+
+
+class PVPNetModel {
   // TODO(author7): Save and restore checkpoints:
   // https://stackoverflow.com/questions/37508771/how-to-save-and-restore-a-tensorflow-graph-and-its-state-in-c
   // https://stackoverflow.com/questions/35508866/tensorflow-different-ways-to-export-and-run-graph-in-c/43639305#43639305
@@ -69,16 +85,17 @@ class VPNetModel {
   };
 
   struct InferenceInputs {
-    std::vector<Action> legal_actions;
-    std::vector<float> observations;
+    std::vector<float> environment;
+    int state;
 
-    bool operator==(const InferenceInputs& o) const {
-      return legal_actions == o.legal_actions && observations == o.observations;
+    bool operator==(const InferenceInputs& o) const
+    {
+        return environment==o.environment && state==o.state;
     }
 
     template <typename H>
     friend H AbslHashValue(H h, const InferenceInputs& in) {
-      return H::combine(std::move(h), in.legal_actions, in.observations);
+      return H::combine(std::move(h), in.environment,in.state);
     }
   };
   struct InferenceOutputs {
@@ -87,21 +104,21 @@ class VPNetModel {
   };
 
   struct TrainInputs {
-    std::vector<Action> legal_actions;
-    std::vector<float> observations;
+    std::vector<float> environment;
+    int state;
     ActionsAndProbs policy;
     double value;
   };
 
-  VPNetModel(const Game& game, const std::string& path,
+  PVPNetModel(const Game& game, const std::string& path,
              const std::string& file_name,
              const std::string& device = "/cpu:0");
 
   // Move only, not copyable.
-  VPNetModel(VPNetModel&& other) = default;
-  VPNetModel& operator=(VPNetModel&& other) = default;
-  VPNetModel(const VPNetModel&) = delete;
-  VPNetModel& operator=(const VPNetModel&) = delete;
+  PVPNetModel(PVPNetModel&& other) = default;
+  PVPNetModel& operator=(PVPNetModel&& other) = default;
+  PVPNetModel(const PVPNetModel&) = delete;
+  PVPNetModel& operator=(const PVPNetModel&) = delete;
 
   // Inference: Get both at the same time.
   std::vector<InferenceOutputs> Inference(
@@ -123,16 +140,32 @@ class VPNetModel {
   // checkpoints.
   std::string model_meta_graph_contents_;
 
-  int flat_input_size_;
+  int max_size_;
   int num_actions_;
+  std::vector<int> environment_shape_;
+  std::vector<int> state_shape_;
 
   // Inputs for inference & training separated to have different fixed sizes
   tensorflow::Session* tf_session_ = nullptr;
-  tensorflow::MetaGraphDef meta_graph_def_;
+  tensorflow::MetaGraphDef *meta_graph_def_;
+  std::unique_ptr<tensorflow::SavedModelBundle> model_bundle_;
   tensorflow::SessionOptions tf_opts_;
+  tensorflow::RunOptions run_options;
+
+  enum EnvironmentAxis : std::uint32_t
+  {
+      kAdjacencyAxis=0,
+      kWeightsAxis
+  };
+
+  using InputSpecification = std::vector<std::pair<std::string, tensorflow::Tensor>>;
+    using OutputSpecification = std::vector<std::string>;
+    std::map<std::string,std::string> output_name_map_;
+    std::map<std::string,std::string> input_name_map_;
+
+    std::set<std::string> input_names_, output_names_;
+
 };
 
-}  // namespace algorithms
 }  // namespace open_spiel
-
-#endif  // OPEN_SPIEL_ALGORITHMS_ALPHA_ZERO_VPNET_H_
+#endif  // OPEN_SPIEL_ALGORITHMS_ALPHA_ZERO_PVPNet_H_
