@@ -14,14 +14,27 @@ keras = tf.keras
 
 valid_model_types = ["mlp", "conv2d", "resnet" , "mpgnet"]
 
+
+class L2Loss(tf.Module):
+    def __init__(self, model, alpha:float=1, name="l2_loss"):
+        super().__init__(name=name)
+        self.model = model
+        self.alpha=alpha
+
+    @tf.function
+    def __call__(self):
+        return self.alpha*tf.add_n([tf.nn.l2_loss(v) for v in self.model.trainable_variables])
 def l2_loss(model,alpha:float=1):
-    return lambda :alpha*tf.add_n([tf.nn.l2_loss(v) for v in model.trainable_variables])
+    @tf.function
+    def l2_loss_implementation():
+        return alpha*tf.add_n([tf.nn.l2_loss(v) for v in model.trainable_variables])
+    return l2_loss_implementation
 
 class L2LossHistoryCallback(tf.keras.callbacks.Callback):
     def __init__(self, model,regularization=0.01):
         super().__init__()
         self.model = model
-        self.l2_loss=l2_loss(model,regularization)
+        self.l2_loss=L2Loss(self.model,alpha=regularization, name="l2_loss_callback")
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
@@ -76,8 +89,9 @@ class ModelV2:
         # Neural Net
         self.model=self.build(config,game)
         self.regularization=regularization
-        self.model.add_loss(l2_loss(self.model,alpha=regularization))
-
+        self.l2_loss_function=L2Loss(self.model,alpha=regularization, name="l2_loss")
+        #self.model.add_loss(l2_loss(self.model,alpha=regularization))
+        self.model.add_loss(self.l2_loss_function)
         self.model.compile(loss={"policy_targets":"categorical_crossentropy", "value_targets":"mean_squared_error"},
                            optimizer=keras.optimizers.Adam(config.learning_rate))
 

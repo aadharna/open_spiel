@@ -92,15 +92,22 @@ namespace open_spiel::algorithms::mpg
       path_(path),
       num_actions_(game.NumDistinctActions())
     {
+
+        // Game must have a nested observation tensor shape
         if(game.ObservationTensorShapeSpecs() != Game::TensorShapeSpecs::kNestedList)
             SpielFatalError("ObservationTensorShapeSpecs must be kNestedList for PPVPNetModel");
         auto nested_shape= game.ObservationTensorsShapeList();
+        // The firs dimension is the maximum graph size
         max_size_ = nested_shape.at(0).at(0);
+        // Check that the nested shape is of the form [(n,n,?), 1] or [(n,n,?),()] where n is the maximum graph size
         SPIEL_CHECK_EQ(nested_shape.size(), 2);
         SPIEL_CHECK_EQ(nested_shape.at(0).size(), 3);
         SPIEL_CHECK_LE(nested_shape.at(1).size(), 1);
+        // Extract the environment and state shapes
         environment_shape_ = nested_shape.at(0);
         state_shape_ = nested_shape.at(1);
+
+
 
         // Some assumptions that we can remove eventually. The value net returns
       // a single value in terms of player 0 and the game is assumed to be zero-sum,
@@ -108,23 +115,35 @@ namespace open_spiel::algorithms::mpg
       SPIEL_CHECK_EQ(game.NumPlayers(), 2);
       SPIEL_CHECK_EQ(game.GetType().utility, GameType::Utility::kZeroSum);
 
+      // Load the meta-graph definition
       std::string model_path = absl::StrCat(path, "/", file_name);
       model_meta_graph_contents_ = file::ReadContentsFromFile(model_path, "r");
       //TF_CHECK_OK(
       //    ReadBinaryProto(tf::Env::Default(), model_path, &meta_graph_def_));
 
+
+      // Force CPU. This is needed because the actors are running on the CPU
+        auto* device_count = session_options_.config.mutable_device_count();
+        device_count->insert({"CPU", 1});
+        device_count->insert({"GPU", 0});
+
+
+        // Loads the model and creates a session.
       model_bundle_= std::make_unique<tf::SavedModelBundle>();
         TF_CHECK_OK(tensorflow::LoadSavedModel(
-                tf_opts_,
+                session_options_,
                 run_options,
                 model_path,
                 {"serve"},
                 model_bundle_.get()));
 
+        // Get the meta graph definition
         meta_graph_def_ = &model_bundle_->meta_graph_def;
+        // Get the signature of the model
         auto signatures = model_bundle_->GetSignatures();
-        SPIEL_CHECK_TRUE(signatures.contains("serving_default"));
-        auto [input,input_mapper,output,output_mapper] = ExtractInputOutputNames(*model_bundle_, "serving_default");
+        // Check that the model has the serving_default signature
+        SPIEL_CHECK_TRUE(signatures.contains(kSignatureName));
+        auto [input,input_mapper,output,output_mapper] = ExtractInputOutputNames(*model_bundle_, kSignatureName);
         input_names_ = std::move(input);
         output_names_ = std::move(output);
         input_name_map_ = std::move(input_mapper);
@@ -138,11 +157,12 @@ namespace open_spiel::algorithms::mpg
 
       //tf::graph::SetDefaultDevice(device, meta_graph_def_->mutable_graph_def());
 
+      // If there is a previous session, close it
       if (tf_session_ != nullptr) {
         TF_CHECK_OK(tf_session_->Close());
       }
 
-      // create a new session
+      // Point the session to the graph we just loaded
       tf_session_ = model_bundle_->GetSession();
 
       // Load graph into session
@@ -179,18 +199,19 @@ std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(
     const std::vector<InferenceInputs>& inputs) {
   int inference_batch_size = inputs.size();
 
-  // Fill the inputs and mask
+  // The environment tensor
   tf::Tensor tf_environment_inputs(
       tf::DT_FLOAT, tf::TensorShape(AddBatchDim(environment_shape_, inference_batch_size)));
   auto environment = tf_environment_inputs.tensor<float,4>();
 
+  // The state tensor
   tf::Tensor tf_state_inputs(
       tf::DT_FLOAT, tf::TensorShape(AddBatchDim(state_shape_, inference_batch_size)));
   auto state=tf_state_inputs.matrix<float>();
 
 
+  // Copy the inputs into the tensors
   for (int b = 0; b < inference_batch_size; ++b)
-    // Zero initialize the sparse inputs.
   {
       auto environment_view= EnvironmentViewConst(inputs[b].environment,environment_shape_);
       for(int i=0; i < environment_view.shape(0); i++)
@@ -201,11 +222,12 @@ std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(
       state(b,0) = inputs[b].state;
   }
 
+    // Create the input specification
     InputSpecification input_specification;
     input_specification.emplace_back(input_name_map_["environment"], tf_environment_inputs);
     input_specification.emplace_back(input_name_map_["state"], tf_state_inputs);
 //    input_specification.emplace_back("training", tensorflow::Tensor(false));
-
+    // Create the output specification
     OutputSpecification output_specification;
     output_specification.emplace_back(output_name_map_["value_targets"]);
     output_specification.emplace_back(output_name_map_["policy_targets"]);
@@ -215,9 +237,11 @@ std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(
   TF_CHECK_OK(tf_session_->Run(input_specification,
       output_specification, {}, &tf_outputs));
 
+  // Extract the outputs
   TensorMap policy_matrix = tf_outputs[0].matrix<float>();
   TensorMap value_matrix = tf_outputs[1].matrix<float>();
 
+  // Convert the outputs into the correct format
   std::vector<InferenceOutputs> out;
   out.reserve(inference_batch_size);
   for (int b = 0; b < inference_batch_size; ++b)
@@ -237,11 +261,12 @@ std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(
 
     out.push_back({value, state_policy});
   }
-
+ // Return the predictions for the whole batch
   return out;
 }
 
 PVPNetModel::LossInfo PVPNetModel::Learn(const std::vector<TrainInputs>& inputs) {
+    throw std::runtime_error("Training is not supported yet");
   int training_batch_size = inputs.size();
 
   tensorflow::Tensor tf_environment_inputs(
@@ -323,4 +348,12 @@ PVPNetModel::LossInfo PVPNetModel::Learn(const std::vector<TrainInputs>& inputs)
 
     }
 
+    PVPNetModel::InferenceInputs PVPNetModel::InferenceInputs::Extract(std::vector<float> data)
+    {
+        InferenceInputs inputs;
+        inputs.state = data.back();
+        inputs.environment = std::move(data);
+        inputs.environment.pop_back();
+        return inputs;
+    }
 }  // namespace open_spiel

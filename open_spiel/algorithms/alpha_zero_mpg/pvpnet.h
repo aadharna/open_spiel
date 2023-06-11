@@ -46,9 +46,14 @@ bool CreateGraphDefMPG(
         std::map<std::string,std::string> output_name_mapper;
 
     };
-    InputOutputNamesType ExtractInputOutputNames(const tensorflow::SavedModelBundle &bundle,const std::string& signature = "serving_default");
 
 
+/**
+ * @brief The PVPNet class
+ * This class is used to load a tensorflow model and run it.
+ * It is used to evaluate the policy and value of a state.
+ * @warning This class does not support training.
+ **/
 class PVPNetModel {
   // TODO(author7): Save and restore checkpoints:
   // https://stackoverflow.com/questions/37508771/how-to-save-and-restore-a-tensorflow-graph-and-its-state-in-c
@@ -56,6 +61,7 @@ class PVPNetModel {
   // https://www.tensorflow.org/api_docs/python/tf/compat/v1/train/Saver
 
  public:
+    inline static const std::string kSignatureName = "serving_default";
   class LossInfo {
    public:
     LossInfo() {}
@@ -93,7 +99,10 @@ class PVPNetModel {
         return environment==o.environment && state==o.state;
     }
 
-    template <typename H>
+      static InferenceInputs Extract(std::vector<float> data);
+
+
+      template <typename H>
     friend H AbslHashValue(H h, const InferenceInputs& in) {
       return H::combine(std::move(h), in.environment,in.state);
     }
@@ -149,7 +158,7 @@ class PVPNetModel {
   tensorflow::Session* tf_session_ = nullptr;
   tensorflow::MetaGraphDef *meta_graph_def_;
   std::unique_ptr<tensorflow::SavedModelBundle> model_bundle_;
-  tensorflow::SessionOptions tf_opts_;
+  tensorflow::SessionOptions session_options_;
   tensorflow::RunOptions run_options;
 
   enum EnvironmentAxis : std::uint32_t
@@ -167,5 +176,13 @@ class PVPNetModel {
 
 };
 
+/**
+     * @brief Extracts the input and output node names from a tensorflow SavedModelBundle
+     * @details The input and output node names are extracted from the signature name. Also, creates a mapping from the input and output node names to the actual node names in the graph.
+     * @param bundle The SavedModelBundle
+     * @param signature The signature name to use. Defaults to PVPNetModel::kSignatureName
+     * @return A struct containing the input and output node names
+     * */
+    InputOutputNamesType ExtractInputOutputNames(const tensorflow::SavedModelBundle &bundle,const std::string& signature = PVPNetModel::kSignatureName);
 }  // namespace open_spiel
 #endif  // OPEN_SPIEL_ALGORITHMS_ALPHA_ZERO_PVPNet_H_

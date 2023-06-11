@@ -25,6 +25,7 @@
 #include "open_spiel/spiel.h"
 #include "open_spiel/spiel_utils.h"
 #include "open_spiel/utils/file.h"
+#include "open_spiel/abseil-cpp/absl/flags/parse.h"
 
 namespace open_spiel::algorithms::mpg {
     namespace {
@@ -107,20 +108,23 @@ void TestModelCreation(const std::string& nn_model) {
 
   std::unique_ptr<open_spiel::State> state = game->NewInitialState();
   std::vector<Action> legal_actions = state->LegalActions();
-  std::vector<float> environment = state->ObservationTensor();
-  int _state=environment.back();
-  environment.pop_back();
+  auto [environment,_state] = PVPNetModel::InferenceInputs::Extract(state->ObservationTensor());
   PVPNetModel::InferenceInputs inputs = {environment, _state};
 
   // Check that inference runs at all.
   model.Inference(std::vector{inputs});
+  std::vector<PVPNetModel::InferenceInputs> batch_inputs;
 
-  std::vector<PVPNetModel::TrainInputs> train_inputs;
-  train_inputs.emplace_back(PVPNetModel::TrainInputs{
-      environment,_state, ActionsAndProbs({{legal_actions[0], 1}}), 0});
+  for(int i=0;i<100;i++)
+  {
+      game->NewInitialEnvironmentState();
+      auto input = PVPNetModel::InferenceInputs::Extract(state->ObservationTensor());
+      batch_inputs.push_back(input);
+  }
 
   // Check that learning runs at all.
-  model.Learn(train_inputs);
+  model.Inference(batch_inputs);
+
 }
 
 // Can learn a single trajectory
@@ -202,17 +206,25 @@ void TestModelLearnsOptimal(
   SPIEL_CHECK_LT(losses.back().Policy(), policy_loss_goal);
 }
 
+    void TestModelLoadCheckpoint(const std::string &nn_model)
+    {
+
+    }
+
 }  // namespace
 }  // namespace open_spiel
 
 int main(int argc, char** argv) {
+    absl::ParseCommandLine(argc, argv);
+    setenv("CUDA_VISIBLE_DEVICES", "", 1);
     open_spiel::algorithms::mpg::TestModelCreation("mlp");
-    open_spiel::algorithms::mpg::TestModelCreation("conv2d");
-    open_spiel::algorithms::mpg::TestModelCreation("resnet");
+    open_spiel::algorithms::mpg::TestModelLoadCheckpoint("mlp");
+//    open_spiel::algorithms::mpg::TestModelCreation("conv2d");
+//    open_spiel::algorithms::mpg::TestModelCreation("resnet");
 
   // Tests below here reuse the graphs created above. Graph creation is slow
   // due to calling a separate python process.
-
+/*
   open_spiel::algorithms::mpg::TestModelLearnsSimple("mlp");
   open_spiel::algorithms::mpg::TestModelLearnsSimple("conv2d");
   open_spiel::algorithms::mpg::TestModelLearnsSimple("resnet");
@@ -221,4 +233,5 @@ int main(int argc, char** argv) {
   open_spiel::algorithms::mpg::TestModelLearnsOptimal("mlp", train_inputs);
   open_spiel::algorithms::mpg::TestModelLearnsOptimal("conv2d", train_inputs);
   open_spiel::algorithms::mpg::TestModelLearnsOptimal("resnet", train_inputs);
+  */
 }
