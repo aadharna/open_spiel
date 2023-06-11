@@ -137,14 +137,14 @@ def _init_bot(config, game, evaluator_, evaluation):
       dont_return_chance_node=True)
 
 
-def _play_game(logger, game_num, game, bots, temperature, temperature_drop,new_environment=True):
+def _play_game(logger, game_num, game, bots, temperature, temperature_drop,fix_environment=False):
   """Play one game, return the trajectory."""
   trajectory = Trajectory()
   actions = []
-  if new_environment:
-    state = game.new_initial_environment_state()
-  else:
+  if fix_environment:
     state = game.new_initial_state()
+  else:
+    state = game.new_initial_environment_state()
   random_state = np.random.RandomState()
   logger.opt_print(" Starting game {} ".format(game_num).center(60, "-"))
   logger.opt_print("Initial state:\n{}".format(state))
@@ -217,7 +217,7 @@ def actor(*, config, game, logger, queue):
     if not has_element:
       return
     queue.put(_play_game(logger, game_num, game, bots, config.temperature,
-                         config.temperature_drop))
+                         config.temperature_drop,fix_environment= config.fix_environment))
 
 
 @watcher
@@ -253,7 +253,7 @@ def evaluator(*, game, config, logger, queue):
       bots = list(reversed(bots))
 
     trajectory = _play_game(logger, game_num, game, bots, temperature=1,
-                            temperature_drop=0)
+                            temperature_drop=0, fix_environment= config.fix_environment)
     results.append(trajectory.returns[az_player])
     queue.put((difficulty, trajectory.returns[az_player]))
 
@@ -458,6 +458,10 @@ def alpha_zero(config: Config):
     raise ValueError("Game must have sequential turns.")
   if game_type.chance_mode != pyspiel.GameType.ChanceMode.DETERMINISTIC:
     raise ValueError("Game must be deterministic.")
+
+  if config.fix_environment:
+      print("Fixing environment:")
+      print(game.new_initial_state())
 
   path = config.path
   if not path:

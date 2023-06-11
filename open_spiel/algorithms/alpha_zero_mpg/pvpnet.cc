@@ -122,12 +122,6 @@ namespace open_spiel::algorithms::mpg
       //    ReadBinaryProto(tf::Env::Default(), model_path, &meta_graph_def_));
 
 
-      // Force CPU. This is needed because the actors are running on the CPU
-        auto* device_count = session_options_.config.mutable_device_count();
-        device_count->insert({"CPU", 1});
-        device_count->insert({"GPU", 0});
-
-
         // Loads the model and creates a session.
       model_bundle_= std::make_unique<tf::SavedModelBundle>();
         TF_CHECK_OK(tensorflow::LoadSavedModel(

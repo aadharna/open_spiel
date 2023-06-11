@@ -141,8 +141,9 @@ class Config(collections.namedtuple(
         "nn_depth",
         "observation_shape",
         "output_size",
-
+        "verbose",
         "quiet",
+        "fix_environment"
     ])):
   """A config for the model/experiment."""
   @property

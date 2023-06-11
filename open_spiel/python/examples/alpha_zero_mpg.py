@@ -57,6 +57,7 @@ flags.DEFINE_integer(
 flags.DEFINE_integer("max_steps", 0, "How many learn steps before exiting.")
 flags.DEFINE_bool("quiet", True, "Don't show the moves as they're played.")
 flags.DEFINE_bool("verbose", False, "Show the MCTS stats of possible moves.")
+flags.DEFINE_bool("fix_environment", False,"Fix the game environment for debugging.")
 flags.DEFINE_float("regularization", 0.001, "L2 regularization strength.")
 
 FLAGS = flags.FLAGS
@@ -84,14 +85,14 @@ def main(unused_argv):
       temperature_drop=FLAGS.temperature_drop,
       evaluation_window=FLAGS.evaluation_window,
       eval_levels=FLAGS.eval_levels,
-
+      verbose=FLAGS.verbose,
       nn_model=FLAGS.nn_model,
       nn_width=FLAGS.nn_width,
       nn_depth=FLAGS.nn_depth,
       observation_shape=None,
       output_size=None,
-
       quiet=FLAGS.quiet,
+      fix_environment=FLAGS.fix_environment,
   )
   alpha_zero.alpha_zero(config)
 
