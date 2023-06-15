@@ -28,6 +28,10 @@ namespace open_spiel {
 // dimensions) must be known at compile time, though the actual sizes of the
 // dimensions can be supplied at construction time. It then lets you index into
 // the vector easily without having to compute the 1d-vector's indices manually.
+
+    template <int Rank>
+    class TensorViewConst;
+
 template <int Rank>
 class TensorView {
  public:
@@ -67,6 +71,7 @@ class TensorView {
  private:
   absl::Span<float> values_;
   const std::array<int, Rank> shape_;
+  friend class TensorViewConst<Rank>;
 };
 
 
@@ -78,6 +83,9 @@ class TensorView {
                 : values_(values), shape_(shape) {
             SPIEL_CHECK_EQ(size(), values_.size());
         }
+
+        constexpr TensorViewConst(const TensorView<Rank>& other)
+                : values_(other.values_), shape_(other.shape_) {}
 
         constexpr int size() const {
             return std::accumulate(shape_.begin(), shape_.end(), 1,

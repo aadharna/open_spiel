@@ -16,7 +16,7 @@ valid_model_types = ["mlp", "conv2d", "resnet" , "mpgnet"]
 
 
 class L2Loss(tf.Module):
-    def __init__(self, model, alpha:float=1, name="l2_loss"):
+    def __init__(self, model, alpha:float=1, name=None):
         super().__init__(name=name)
         self.model = model
         self.alpha=alpha

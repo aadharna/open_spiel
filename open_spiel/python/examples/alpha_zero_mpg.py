@@ -39,7 +39,7 @@ flags.DEFINE_float("temperature", 1,
                    "Temperature for final move selection.")
 flags.DEFINE_integer("temperature_drop", 10,  # Less than AZ due to short games.
                      "Drop the temperature to 0 after this many moves.")
-flags.DEFINE_enum("nn_model", "resnet", model_lib.valid_model_types,
+flags.DEFINE_enum("nn_model", "mlp", model_lib.valid_model_types,
                   "What type of model should be used?.")
 flags.DEFINE_integer("nn_width", 2 ** 7, "How wide should the network be.")
 flags.DEFINE_integer("nn_depth", 10, "How deep should the network be.")

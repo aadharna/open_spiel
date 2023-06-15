@@ -26,7 +26,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("game", None, "Name of the game")
 flags.DEFINE_string("path", None, "Directory to save graph")
 flags.DEFINE_string("graph_def", None, "Filename for the graph")
-flags.DEFINE_enum("nn_model", "resnet", model_lib.valid_model_types,
+flags.DEFINE_enum("nn_model", "mlp", model_lib.valid_model_types,
                   "What type of model should be used?.")
 flags.DEFINE_integer("nn_width", 2 ** 7, "How wide should the network be.")
 flags.DEFINE_integer("nn_depth", 10, "How deep should the network be.")

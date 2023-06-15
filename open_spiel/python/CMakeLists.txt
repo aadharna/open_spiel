@@ -16,7 +16,7 @@ endif()
 
 message(NOTICE "Python executable: ${Python3_EXECUTABLE}")
 message(NOTICE "Python include dirs: ${Python3_INCLUDE_DIRS}")
-message(NOTICE "Python library dirs: ${Python3_LIBRARY_DIRS}")
+message(NOTICE "GPython library dirs: ${Python3_LIBRARY_DIRS}")
 include_directories(SYSTEM ${Python3_INCLUDE_DIRS})
 
 if(Python3_VERSION VERSION_LESS "3.6.0")

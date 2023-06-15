@@ -219,7 +219,8 @@ int main(int argc, char** argv) {
     setenv("CUDA_VISIBLE_DEVICES", "", 1);
     open_spiel::algorithms::mpg::TestModelCreation("mlp");
     open_spiel::algorithms::mpg::TestModelLoadCheckpoint("mlp");
-//    open_spiel::algorithms::mpg::TestModelCreation("conv2d");
+    open_spiel::algorithms::mpg::TestModelCreation("gnn");
+    open_spiel::algorithms::mpg::TestModelLoadCheckpoint("gnn");
 //    open_spiel::algorithms::mpg::TestModelCreation("resnet");
 
   // Tests below here reuse the graphs created above. Graph creation is slow
