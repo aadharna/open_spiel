@@ -40,6 +40,7 @@
 #include <tensorflow/cc/saved_model/loader.h>
 #include <tensorflow/core/framework/tensor.h>
 #include <tensorflow/core/public/session.h>
+#include <filesystem>
 
 
 
@@ -90,11 +91,14 @@ namespace open_spiel::algorithms::mpg
         return {environment_span, environment_shape_array};
     }
 
+    void PVPNetModel::LoadSavedModel(const std::string &path, const std::string &file_name, const std::string &device)
+    {
+        LoadSavedModel(std::filesystem::path(path) / file_name, device);
+    }
+
     PVPNetModel::PVPNetModel(const Game& game, const std::string& path,
-                       const std::string& file_name, const std::string& device)
-    : device_(device),
-      path_(path),
-      num_actions_(game.NumDistinctActions())
+                       const std::string& file_name, const open_spiel::algorithms::mpg::Device& device)
+    : PVPNetModel(game,std::filesystem::path(path) / file_name, device)
     {
 
         // Game must have a nested observation tensor shape
@@ -119,55 +123,37 @@ namespace open_spiel::algorithms::mpg
       SPIEL_CHECK_EQ(game.NumPlayers(), 2);
       SPIEL_CHECK_EQ(game.GetType().utility, GameType::Utility::kZeroSum);
 
-      // Load the meta-graph definition
-      std::string model_path = absl::StrCat(path, "/", file_name);
-      model_meta_graph_contents_ = file::ReadContentsFromFile(model_path, "r");
-      //TF_CHECK_OK(
-      //    ReadBinaryProto(tf::Env::Default(), model_path, &meta_graph_def_));
+      LoadSavedModel(path, file_name, device.device_name());
+    }
+
+    PVPNetModel::PVPNetModel(const Game& game, const std::string &path, const open_spiel::algorithms::mpg::Device& device)
+            : device_(device.device_name()),
+              num_actions_(game.NumDistinctActions())
+    {
+
+        // Game must have a nested observation tensor shape
+        if(game.ObservationTensorShapeSpecs() != Game::TensorShapeSpecs::kNestedList)
+            SpielFatalError("ObservationTensorShapeSpecs must be kNestedList for PPVPNetModel");
+        auto nested_shape= game.ObservationTensorsShapeList();
+        // The firs dimension is the maximum graph size
+        max_size_ = nested_shape.at(0).at(0);
+        // Check that the nested shape is of the form [(n,n,?), 1] or [(n,n,?),()] where n is the maximum graph size
+        SPIEL_CHECK_EQ(nested_shape.size(), 2);
+        SPIEL_CHECK_EQ(nested_shape.at(0).size(), 3);
+        SPIEL_CHECK_LE(nested_shape.at(1).size(), 1);
+        // Extract the environment and state shapes
+        environment_shape_ = nested_shape.at(0);
+        state_shape_ = nested_shape.at(1);
 
 
-        // Loads the model and creates a session.
-      model_bundle_= std::make_unique<tf::SavedModelBundle>();
-        TF_CHECK_OK(tensorflow::LoadSavedModel(
-                session_options_,
-                run_options,
-                model_path,
-                {"serve"},
-                model_bundle_.get()));
 
-        // Get the meta graph definition
-        meta_graph_def_ = &model_bundle_->meta_graph_def;
-        // Get the signature of the model
-        auto signatures = model_bundle_->GetSignatures();
-        // Check that the model has the serving_default signature
-        SPIEL_CHECK_TRUE(signatures.contains(kSignatureName));
-        auto [input,input_mapper,output,output_mapper] = ExtractInputOutputNames(*model_bundle_, kSignatureName);
-        input_names_ = std::move(input);
-        output_names_ = std::move(output);
-        input_name_map_ = std::move(input_mapper);
-        output_name_map_ = std::move(output_mapper);
-        std::set<std::string> expected_input_names = {"environment","state"};
-        std::set<std::string> expected_output_names = {"value_targets","policy_targets"};
-        if(input_names_ != expected_input_names)
-            SpielFatalError(absl::StrCat("Input names do not match expected names. Got: ", absl::StrJoin(input_names_, ",")));
-        if(output_names_ != expected_output_names)
-            SpielFatalError(absl::StrCat("Output names do not match expected names. Got: ", absl::StrJoin(output_names_, ",")));
+        // Some assumptions that we can remove eventually. The value net returns
+        // a single value in terms of player 0 and the game is assumed to be zero-sum,
+        // so player 1 can just be -value.
+        SPIEL_CHECK_EQ(game.NumPlayers(), 2);
+        SPIEL_CHECK_EQ(game.GetType().utility, GameType::Utility::kZeroSum);
 
-      //tf::graph::SetDefaultDevice(device, meta_graph_def_->mutable_graph_def());
-
-      // If there is a previous session, close it
-      if (tf_session_ != nullptr) {
-        TF_CHECK_OK(tf_session_->Close());
-      }
-
-      // Point the session to the graph we just loaded
-      tf_session_ = model_bundle_->GetSession();
-
-      // Load graph into session
-      //TF_CHECK_OK(tf_session_->Create(meta_graph_def_->graph_def()));
-
-      // Initialize our variables
-      //TF_CHECK_OK(tf_session_->Run({}, {}, {"init_all_vars_op"}, nullptr));
+        LoadSavedModel(path, device_);
     }
 
     std::string PVPNetModel::SaveCheckpoint(int step)
@@ -265,8 +251,8 @@ std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(
       output_specification, {}, &tf_outputs));
 
   // Extract the outputs
-  TensorMap policy_matrix = tf_outputs[0].matrix<float>();
-  TensorMap value_matrix = tf_outputs[1].matrix<float>();
+  TensorMap policy_matrix = tf_outputs[1].matrix<float>();
+  TensorMap value_matrix = tf_outputs[0].matrix<float>();
 
   // Convert the outputs into the correct format
   std::vector<InferenceOutputs> out;
@@ -279,7 +265,7 @@ std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(
     auto environment_view=EnvironmentViewConst(inputs[b].environment,environment_shape_);
     std::vector<int> legal_actions;
     //Extracts legal actions
-    for(int i=0;i<num_actions_;i++) if(environment_view[{inputs[b].state,i,EnvironmentAxis::kAdjacencyAxis}] == 0)
+    for(int i=0;i<num_actions_;i++) if(environment_view[{inputs[b].state,i,EnvironmentAxis::kAdjacencyAxis}] > 0.5)
         legal_actions.push_back(i);
 
     state_policy.reserve(legal_actions.size());
@@ -291,6 +277,79 @@ std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(
  // Return the predictions for the whole batch
   return out;
 }
+
+void PVPNetModel::LoadSavedModel(const std::string &model_path, const std::string &device)
+{
+
+    FreeSession();
+
+    model_meta_graph_contents_ = file::ReadContentsFromFile(model_path, "r");
+    //TF_CHECK_OK(
+    //    ReadBinaryProto(tf::Env::Default(), model_path, &meta_graph_def_));
+
+
+    // Loads the model and creates a session.
+    model_bundle_= std::make_unique<tf::SavedModelBundle>();
+    TF_CHECK_OK(tensorflow::LoadSavedModel(
+            session_options_,
+            run_options,
+            model_path,
+            {"serve"},
+            model_bundle_.get()));
+
+    // Get the meta graph definition
+    meta_graph_def_ = &model_bundle_->meta_graph_def;
+    // Get the signature of the model
+    auto signatures = model_bundle_->GetSignatures();
+    // Check that the model has the serving_default signature
+    SPIEL_CHECK_TRUE(signatures.contains(kSignatureName));
+    auto [input,input_mapper,output,output_mapper] = ExtractInputOutputNames(*model_bundle_, kSignatureName);
+    input_names_ = std::move(input);
+    output_names_ = std::move(output);
+    input_name_map_ = std::move(input_mapper);
+    output_name_map_ = std::move(output_mapper);
+    std::set<std::string> expected_input_names = {"environment","state"};
+    std::set<std::string> expected_output_names = {"value_targets","policy_targets"};
+    if(input_names_ != expected_input_names)
+        SpielFatalError(absl::StrCat("Input names do not match expected names. Got: ", absl::StrJoin(input_names_, ",")));
+    if(output_names_ != expected_output_names)
+        SpielFatalError(absl::StrCat("Output names do not match expected names. Got: ", absl::StrJoin(output_names_, ",")));
+
+    //tf::graph::SetDefaultDevice(device, meta_graph_def_->mutable_graph_def());
+
+
+    // Point the session to the graph we just loaded
+    tf_session_ = model_bundle_->GetSession();
+
+    // Load graph into session
+    //TF_CHECK_OK(tf_session_->Create(meta_graph_def_->graph_def()));
+
+    // Initialize our variables
+    //TF_CHECK_OK(tf_session_->Run({}, {}, {"init_all_vars_op"}, nullptr));
+}
+
+
+    void PVPNetModel::Load(const std::string& path, bool checkpoint) {
+  if(checkpoint)
+    LoadCheckpoint(path);
+  else
+  {
+      std::filesystem::path model_dir(path);
+      LoadSavedModel(path, device_);
+  }
+}
+
+    void PVPNetModel::FreeSession()
+    {
+        if (tf_session_ != nullptr)
+            TF_CHECK_OK(tf_session_->Close());
+        tf_session_ = nullptr;
+    }
+
+    PVPNetModel::~PVPNetModel()
+    {
+        FreeSession();
+    }
 
 PVPNetModel::LossInfo PVPNetModel::Learn(const std::vector<TrainInputs>& inputs) {
     throw std::runtime_error("Training is not supported yet");
@@ -382,5 +441,30 @@ PVPNetModel::LossInfo PVPNetModel::Learn(const std::vector<TrainInputs>& inputs)
         inputs.environment = std::move(data);
         inputs.environment.pop_back();
         return inputs;
+    }
+
+    Device::Device(DeviceType device_type, int device_id)
+    {
+        if(device_type == DeviceType::CPU)
+            device_name_ = "/cpu:" + std::to_string(device_id);
+        else if(device_type == DeviceType::GPU)
+            device_name_ = "/gpu:" + std::to_string(device_id);
+    }
+    Device::Device(const std::string& device_name):device_name_(device_name)
+    {
+
+    }
+    Device Device::CPU(int device_id)
+    {
+        return Device(DeviceType::CPU,device_id);
+    }
+    Device Device::GPU(int device_id)
+    {
+        return Device(DeviceType::GPU,device_id);
+    }
+
+    std::string Device::device_name() const
+    {
+        return device_name_;
     }
 }  // namespace open_spiel

@@ -100,7 +100,7 @@ PVPNetModel BuildModel(const Game& game, const std::string& nn_model,
   std::string model_path = absl::StrCat(tmp_dir, "/", filename);
   SPIEL_CHECK_TRUE(file::Exists(model_path));
 
-  PVPNetModel model(game, tmp_dir, filename, "/cpu:0");
+  PVPNetModel model(game, tmp_dir, filename, Device::CPU());
 
   return model;
 }
@@ -254,10 +254,12 @@ void TestModelLearnsOptimal(
 
         auto state=LoadStateFromTestData(game,input_path);
         PVPNetModel model = PVPNetModel(*game, model_dir, model_name);
+        auto result=runInference(state, model);
+        std::cout << "Value:  " << result.value << " Policy: " << result.policy << std::endl;
 
         model.LoadCheckpoint(checkpoint_path);
-        auto result=runInference(state, model);
-        std::cout << "Value: " << result.value << " Policy: " << result.policy << std::endl;
+        result=runInference(state, model);
+        std::cout << "Value:  " << result.value << " Policy: " << result.policy << std::endl;
 
     }
 

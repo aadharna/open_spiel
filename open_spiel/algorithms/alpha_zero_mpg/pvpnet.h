@@ -47,6 +47,24 @@ bool CreateGraphDefMPG(
 
     };
 
+    class Device
+    {
+        enum class DeviceType
+        {
+            CPU,
+            GPU
+        };
+        std::string device_name_;
+    public:
+        Device(DeviceType device_type, int device_id);
+        Device(const std::string& device_name);
+
+        std::string device_name() const;
+
+        static Device CPU(int device_id=0);
+        static Device GPU(int device_id=0);
+    };
+
 
 /**
  * @brief The PVPNet class
@@ -119,15 +137,17 @@ class PVPNetModel {
     double value;
   };
 
-  PVPNetModel(const Game& game, const std::string& path,
+  PVPNetModel(const Game& game, const std::string& directory,
              const std::string& file_name,
-             const std::string& device = "/cpu:0");
-
+             const Device &device = Device::CPU());
+    PVPNetModel(const Game& game, const std::string& path,
+                const Device& device = Device::CPU());
   // Move only, not copyable.
   PVPNetModel(PVPNetModel&& other) = default;
   PVPNetModel& operator=(PVPNetModel&& other) = default;
   PVPNetModel(const PVPNetModel&) = delete;
   PVPNetModel& operator=(const PVPNetModel&) = delete;
+  ~PVPNetModel();
 
   // Inference: Get both at the same time.
   std::vector<InferenceOutputs> Inference(
@@ -140,10 +160,15 @@ class PVPNetModel {
 
   std::string SaveCheckpoint(int step);
   void LoadCheckpoint(const std::string& path);
+    void LoadSavedModel(const std::string &path, const std::string &file_name, const std::string &device);
+    void LoadSavedModel(const std::string &path, const std::string &device);
+
+    void Load(const std::string& path, bool checkpoint = false);
 
   const std::string Device() const { return device_; }
+protected:
 
- private:
+private:
   std::string device_;
   std::string path_;
 
@@ -175,6 +200,7 @@ class PVPNetModel {
     std::map<std::string,std::string> input_name_map_;
 
     std::set<std::string> input_names_, output_names_;
+    void FreeSession();
 
 };
 
