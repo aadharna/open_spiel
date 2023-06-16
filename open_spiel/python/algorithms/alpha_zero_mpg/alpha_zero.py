@@ -466,7 +466,7 @@ def alpha_zero(config: Config):
   path = config.path
   if not path:
     path = tempfile.mkdtemp(prefix="az-{}-{}-".format(
-        datetime.datetime.now().strftime("%Y-%m-%d-%H-%M"), config.game))
+        datetime.datetime.now().strftime("%Y-%m-%d-%H-%M"), game.get_type().short_name))
     config = config._replace(path=path)
 
   if not os.path.exists(path):

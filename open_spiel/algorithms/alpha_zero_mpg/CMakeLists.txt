@@ -10,10 +10,15 @@ if (OPEN_SPIEL_BUILD_WITH_TENSORFLOW_CC)
           pvpnet.h
           pvpnet.cc
   )
+
   target_include_directories (alpha_zero_parametric PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   add_executable(pvpnet_test pvpnet_test.cc ${OPEN_SPIEL_OBJECTS}
                  $<TARGET_OBJECTS:alpha_zero_parametric> $<TARGET_OBJECTS:tests>)
+  add_custom_command(TARGET pvpnet_test POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_CURRENT_SOURCE_DIR}/test_data ${CMAKE_CURRENT_BINARY_DIR}/test_data
+          DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test_data)
   add_test(pvpnet_test pvpnet_test)
   add_executable(pvpnet_inference_test pvpnet_inference_test.cc ${OPEN_SPIEL_OBJECTS}
           $<TARGET_OBJECTS:alpha_zero_parametric> $<TARGET_OBJECTS:tests>)

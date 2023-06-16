@@ -131,7 +131,9 @@ class PVPNetModel {
 
   // Inference: Get both at the same time.
   std::vector<InferenceOutputs> Inference(
-    const std::vector<InferenceInputs>& inputs);
+    const std::vector<InferenceInputs>& inputs, const std::vector<int> &environment_shape);
+    std::vector<InferenceOutputs> Inference(
+            const std::vector<InferenceInputs>& inputs);
 
   // Training: do one (batch) step of neural net training
   LossInfo Learn(const std::vector<TrainInputs>& inputs);

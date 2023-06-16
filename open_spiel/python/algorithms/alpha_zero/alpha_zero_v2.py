@@ -116,7 +116,6 @@ class Config(collections.namedtuple(
     "Config", [
         "game",
         "path",
-        "regularization",
         "learning_rate",
         "weight_decay",
         "train_batch_size",
@@ -150,6 +149,9 @@ class Config(collections.namedtuple(
   def architecture(self):
       return self.nn_model
   pass
+  @property
+  def regularization(self):
+    return self.weight_decay
 
 
 #TODO: add a function to load from config

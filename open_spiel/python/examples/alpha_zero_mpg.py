@@ -18,7 +18,6 @@ from absl import app
 from absl import flags
 from argparse import Namespace
 
-
 from open_spiel.python.algorithms.alpha_zero_mpg import alpha_zero as alpha_zero
 from open_spiel.python.algorithms.alpha_zero_mpg import model as model_lib
 from open_spiel.python.utils import spawn
@@ -57,46 +56,44 @@ flags.DEFINE_integer(
 flags.DEFINE_integer("max_steps", 0, "How many learn steps before exiting.")
 flags.DEFINE_bool("quiet", True, "Don't show the moves as they're played.")
 flags.DEFINE_bool("verbose", False, "Show the MCTS stats of possible moves.")
-flags.DEFINE_bool("fix_environment", False,"Fix the game environment for debugging.")
-flags.DEFINE_float("regularization", 0.001, "L2 regularization strength.")
+flags.DEFINE_bool("fix_environment", False, "Fix the game environment for debugging.")
 
 FLAGS = flags.FLAGS
 
 
 def main(unused_argv):
-  config = alpha_zero.Config(
-      game=FLAGS.game,
-      path=FLAGS.path,
-      learning_rate=FLAGS.learning_rate,
-      weight_decay=FLAGS.weight_decay,
-      train_batch_size=FLAGS.train_batch_size,
-      replay_buffer_size=FLAGS.replay_buffer_size,
-      replay_buffer_reuse=FLAGS.replay_buffer_reuse,
-      max_steps=FLAGS.max_steps,
-      checkpoint_freq=FLAGS.checkpoint_freq,
-      regularization=FLAGS.regularization,
-      actors=FLAGS.actors,
-      evaluators=FLAGS.evaluators,
-      uct_c=FLAGS.uct_c,
-      max_simulations=FLAGS.max_simulations,
-      policy_alpha=FLAGS.policy_alpha,
-      policy_epsilon=FLAGS.policy_epsilon,
-      temperature=FLAGS.temperature,
-      temperature_drop=FLAGS.temperature_drop,
-      evaluation_window=FLAGS.evaluation_window,
-      eval_levels=FLAGS.eval_levels,
-      verbose=FLAGS.verbose,
-      nn_model=FLAGS.nn_model,
-      nn_width=FLAGS.nn_width,
-      nn_depth=FLAGS.nn_depth,
-      observation_shape=None,
-      output_size=None,
-      quiet=FLAGS.quiet,
-      fix_environment=FLAGS.fix_environment,
-  )
-  alpha_zero.alpha_zero(config)
+    config = alpha_zero.Config(
+        game=FLAGS.game,
+        path=FLAGS.path,
+        learning_rate=FLAGS.learning_rate,
+        weight_decay=FLAGS.weight_decay,
+        train_batch_size=FLAGS.train_batch_size,
+        replay_buffer_size=FLAGS.replay_buffer_size,
+        replay_buffer_reuse=FLAGS.replay_buffer_reuse,
+        max_steps=FLAGS.max_steps,
+        checkpoint_freq=FLAGS.checkpoint_freq,
+        actors=FLAGS.actors,
+        evaluators=FLAGS.evaluators,
+        uct_c=FLAGS.uct_c,
+        max_simulations=FLAGS.max_simulations,
+        policy_alpha=FLAGS.policy_alpha,
+        policy_epsilon=FLAGS.policy_epsilon,
+        temperature=FLAGS.temperature,
+        temperature_drop=FLAGS.temperature_drop,
+        evaluation_window=FLAGS.evaluation_window,
+        eval_levels=FLAGS.eval_levels,
+        verbose=FLAGS.verbose,
+        nn_model=FLAGS.nn_model,
+        nn_width=FLAGS.nn_width,
+        nn_depth=FLAGS.nn_depth,
+        observation_shape=None,
+        output_size=None,
+        quiet=FLAGS.quiet,
+        fix_environment=FLAGS.fix_environment,
+    )
+    alpha_zero.alpha_zero(config)
 
 
 if __name__ == "__main__":
-  with spawn.main_handler():
-    app.run(main)
+    with spawn.main_handler():
+        app.run(main)

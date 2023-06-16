@@ -35,7 +35,11 @@
 #include "tensorflow/core/graph/default_device.h"
 #include "tensorflow/core/protobuf/saver.pb.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
+#include <tensorflow/core/util/tensor_bundle/tensor_bundle.h>
 #include "utils/tensor_view.h"
+#include <tensorflow/cc/saved_model/loader.h>
+#include <tensorflow/core/framework/tensor.h>
+#include <tensorflow/core/public/session.h>
 
 
 
@@ -182,20 +186,49 @@ namespace open_spiel::algorithms::mpg
     }
 
 void PVPNetModel::LoadCheckpoint(const std::string& path) {
-  tf::Tensor checkpoint_path(tf::DT_STRING, tf::TensorShape());
+  /*tf::Tensor checkpoint_path(tf::DT_STRING, tf::TensorShape());
   checkpoint_path.scalar<tensorflow::tstring>()() = path;
   TF_CHECK_OK(tf_session_->Run(
       {{meta_graph_def_->saver_def().filename_tensor_name(), checkpoint_path}},
       {}, {meta_graph_def_->saver_def().restore_op_name()}, nullptr));
+    status = session->Run({}, {}, {"save/restore_all"}, nullptr);*/
+     const auto fileTensorName = meta_graph_def_->saver_def().filename_tensor_name();
+    const auto restoreOpName = meta_graph_def_->saver_def().restore_op_name();
+    auto checkpointPathTensor = tf::Tensor(tf::DT_STRING, tf::TensorShape());
+    std::cout << fileTensorName << std::endl;
+    std::cout << restoreOpName << std::endl;
+    checkpointPathTensor.scalar<tensorflow::tstring>()() = path;
+
+    auto status = tf_session_->Run(
+            { { fileTensorName, checkpointPathTensor }, },
+            {},
+            { restoreOpName },
+            nullptr
+    );
+
+    // Ignore NOT_FOUND error for the missing variable
+    if (!status.ok() && status.code() == tf::error::Code::NOT_FOUND) {
+        std::cerr << "Warning: Ignoring NOT_FOUND error for the missing variable." << std::endl;
+        std::cerr << "Warning Message: " << status.error_message() << std::endl;
+        status = tf::OkStatus();
+    }
+
+    if (!status.ok())
+        SpielFatalError(absl::StrCat("Error loading checkpoint: ", status.error_message()));
+}
+
+std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(const std::vector<InferenceInputs>& inputs)
+{
+    return Inference(inputs,environment_shape_);
 }
 
 std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(
-    const std::vector<InferenceInputs>& inputs) {
+    const std::vector<InferenceInputs>& inputs,const std::vector<int>& environment_shape) {
   int inference_batch_size = inputs.size();
 
   // The environment tensor
   tf::Tensor tf_environment_inputs(
-      tf::DT_FLOAT, tf::TensorShape(AddBatchDim(environment_shape_, inference_batch_size)));
+      tf::DT_FLOAT, tf::TensorShape(AddBatchDim(environment_shape, inference_batch_size)));
   auto environment = tf_environment_inputs.tensor<float,4>();
 
   // The state tensor
@@ -207,7 +240,7 @@ std::vector<PVPNetModel::InferenceOutputs> PVPNetModel::Inference(
   // Copy the inputs into the tensors
   for (int b = 0; b < inference_batch_size; ++b)
   {
-      auto environment_view= EnvironmentViewConst(inputs[b].environment,environment_shape_);
+      auto environment_view= EnvironmentViewConst(inputs[b].environment,environment_shape);
       for(int i=0; i < environment_view.shape(0); i++)
       {
           for (int j = 0; j < environment_view.shape(1); j++) for (int k = 0; k < environment_view.shape(2); k++)

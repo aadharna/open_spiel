@@ -377,12 +377,11 @@ namespace open_spiel::mpg {
         return dual();
     }
 
-    WeightedGraphType WeightedGraphType::from_string(const std::string &str)
+    WeightedGraphType WeightedGraphType::from_stream(std::istream& stream)
     {
-        std::stringstream  stream(str);
         WeightedGraphType graph;
         int graph_size=0;
-        while(stream)
+        while(!stream.eof())
         {
             int u, v;
             float w;
@@ -397,6 +396,12 @@ namespace open_spiel::mpg {
             graph[u].emplace(v, w);
         }
         return graph;
+    }
+
+    WeightedGraphType WeightedGraphType::from_string(const std::string &str)
+    {
+        std::istringstream stream(str);
+        return from_stream(stream);
     }
 
     AdjacencyMatrixType WeightedGraphType::adjacency_matrix() const

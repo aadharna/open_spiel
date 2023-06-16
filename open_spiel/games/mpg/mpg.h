@@ -58,6 +58,7 @@ namespace open_spiel::mpg
         [[nodiscard]] WeightedGraphType dual() const;
         WeightedGraphType operator~() const;
         static WeightedGraphType from_string(const std::string& str);
+        static WeightedGraphType from_stream(std::istream& stream);
         [[nodiscard]] AdjacencyMatrixType adjacency_matrix() const;
     };
     struct  GraphType :public std::vector<std::vector<NodeType>>

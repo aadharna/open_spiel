@@ -21,6 +21,7 @@ from absl import flags
 
 from open_spiel.python.algorithms.alpha_zero_mpg import model as model_lib
 import pyspiel
+import numpy as np
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("game", None, "Name of the game")
@@ -34,6 +35,8 @@ flags.DEFINE_float("learning_rate", 0.0001, "Learning rate used for training")
 flags.DEFINE_float("weight_decay", 0.0001, "L2 regularization strength.")
 flags.DEFINE_float("regularization", 0.0001, "L2 regularization strength.")
 flags.DEFINE_bool("verbose", False, "Print information about the model.")
+flags.DEFINE_bool("deterministic", False, "Initialize model weights to 0.")
+flags.DEFINE_bool("with_checkpoint", False, "Save model checkpoint.")
 flags.mark_flag_as_required("game")
 flags.mark_flag_as_required("path")
 flags.mark_flag_as_required("graph_def")
@@ -53,7 +56,10 @@ class Config(collections.namedtuple(
         "nn_depth",
         "verbose",
         "observation_shape",
-        "output_size"
+        "output_size",
+        "debug",
+        "deterministic",
+        "with_checkpoint",
     ])):
     """A config for the model/experiment."""
     pass
@@ -71,6 +77,15 @@ class Config(collections.namedtuple(
         return self.game.num_players()
 
 
+class DeterministicRNG:
+    def __init__(self, seed):
+        self.seed = seed
+        self.rng = np.random.RandomState(seed)
+
+    def __call__(self,shape=None, *args, **kwargs):
+        fans=np.prod(shape[:-1]) if shape is not None else 1
+        stddev=np.sqrt(2/fans)
+        return self.rng.normal(0,stddev,shape)
 
 def main(_):
     config = Config(
@@ -85,8 +100,12 @@ def main(_):
         regularization=FLAGS.regularization,
         verbose=FLAGS.verbose,
         observation_shape=None,
-        output_size=None
+        output_size=None,
+        debug=False,
+        deterministic=FLAGS.deterministic,
+        with_checkpoint=FLAGS.with_checkpoint
     )
+    os.makedirs(config.path,exist_ok=True)
     game = pyspiel.load_game(FLAGS.game)
     if game.observation_tensor_shape_specs() == pyspiel.TensorShapeSpecs.VECTOR:
         shape=game.observation_tensor_shape()
@@ -98,7 +117,7 @@ def main(_):
     model = model_lib.MPGModel(config,game)
     model.model.save(os.path.join(config.path,config.graph_def))
 
-    if FLAGS.verbose:
+    if config.verbose:
         print("Game:", FLAGS.game)
         print("Model type: %s(%s, %s)" % (FLAGS.nn_model, FLAGS.nn_width,
                                           FLAGS.nn_depth))
@@ -106,6 +125,13 @@ def main(_):
         print("Variables:")
         for v in model.model.trainable_variables:
             print("  ", v.name, v.shape)
+
+    if config.deterministic:
+        rng=DeterministicRNG(0)
+        model.model.set_weights([rng(w.shape) for w in model.model.get_weights()])
+    if config.with_checkpoint:
+        os.makedirs(os.path.join(config.path,"checkpoints"),exist_ok=True)
+        model.model.save_weights(os.path.join(config.path,"checkpoints",config.graph_def))
 
 
 if __name__ == "__main__":
