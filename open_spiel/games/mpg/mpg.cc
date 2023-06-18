@@ -79,17 +79,15 @@ namespace open_spiel::mpg {
             return sum / static_cast<WeightType>(M.size());
         }
 
-        WeightType WeightFromPerspective(WeightType weight,Player player)
-        {
-            if(player == mpg::PlayerIdentifier::kMaxPlayer)
-                return weight;
-            else
-                return -weight;
-        }
-
     }  // namespace
 
-
+    WeightType WeightFromPerspective(WeightType weight,Player player)
+    {
+        if(player == mpg::PlayerIdentifier::kMaxPlayer)
+            return weight;
+        else
+            return -weight;
+    }
 
     std::string StateToString(NodeType state) {
         return absl::StrCat("State(", state, ")");
@@ -292,6 +290,12 @@ namespace open_spiel::mpg {
         history_.pop_back();
         --move_number_;
     }
+
+    AdjacencyPayoffsType MPGEnvironmentState::LegalActionsWithPayoffs() const
+    {
+        return environment->graph[current_state];
+    }
+
 
     std::unique_ptr<State> MPGEnvironmentState::Clone() const
     {

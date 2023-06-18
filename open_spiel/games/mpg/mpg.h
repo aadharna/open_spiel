@@ -93,6 +93,10 @@ namespace open_spiel::mpg
         Environment(WeightedGraphType graph, NodeType starting_state);
     };
 
+    using AdjacencyPayoffsType = std::map<NodeType,WeightType> ;
+
+    WeightType WeightFromPerspective(WeightType weight,Player player);
+
     // State of an in-play game.
     class MPGEnvironmentState : public State
     {
@@ -129,6 +133,8 @@ namespace open_spiel::mpg
         void SetCurrentPlayer(Player player) { current_player_ = player; }
         NodeType GetCurrentState() const;
         WeightType GetMeanPayoff() const;
+
+        AdjacencyPayoffsType LegalActionsWithPayoffs() const;
      protected:
 
       void DoApplyAction(Action move) override;

@@ -57,7 +57,6 @@ from open_spiel.python.utils import spawn
 from open_spiel.python.utils import stats
 from open_spiel.python.algorithms.alpha_zero.alpha_zero_v2 import Buffer,Config
 import tensorflow as tf
-from . import utils
 
 
 # Time to wait for processes to join.
@@ -65,7 +64,28 @@ JOIN_WAIT_DELAY = 0.001
 
 
 
+class TrajectoryState(object):
+  """A particular point along a trajectory."""
 
+  def __init__(self, environment,state, current_player, action, policy,
+               value):
+    self.environment = environment
+    self.state = state
+    self.current_player = current_player
+    self.action = action
+    self.policy = policy
+    self.value = value
+
+
+class Trajectory(object):
+  """A sequence of observations, actions and policies, and the outcomes."""
+
+  def __init__(self):
+    self.states = []
+    self.returns = None
+
+  def add(self, information_state, action, policy):
+    self.states.append((information_state, action, policy))
 
 
 
@@ -116,24 +136,10 @@ def _init_bot(config, game, evaluator_, evaluation):
       verbose=False,
       dont_return_chance_node=True)
 
-def _select_move(bot,game, state,actions,temperature,temperature_drop):
-    root = bot.mcts_search(state)
-    #TODO: The number of distinct actions should be determined by the state
-    policy = np.zeros(game.num_distinct_actions())
-    for c in root.children:
-        policy[c.action] = c.explore_count
-    policy = policy ** (1 / temperature)
-    policy /= policy.sum()
-    if len(actions) >= temperature_drop:
-        action = root.best_child().action
-    else:
-        action = np.random.choice(len(policy), p=policy)
-    valuation=root.total_reward / root.explore_count
-    return action, policy,valuation
 
 def _play_game(logger, game_num, game, bots, temperature, temperature_drop,fix_environment=False):
   """Play one game, return the trajectory."""
-  trajectory = utils.Trajectory()
+  trajectory = Trajectory()
   actions = []
   if fix_environment:
     state = game.new_initial_state()
@@ -228,9 +234,8 @@ def evaluator(*, game, config, logger, queue):
     has_element,model=update_checkpoint(logger, queue, model, az_evaluator)
     if not has_element:
       return
-    # Alternate between playing as player Max and player Min.
+
     az_player = game_num % 2
-    # Each difficulty is repeated twice, once per player. Hence, the Euclidean division by 2.
     difficulty = (game_num // 2) % config.eval_levels
     max_simulations = int(config.max_simulations * (10 ** (difficulty / 2)))
     bots = [
@@ -502,3 +507,4 @@ def alpha_zero(config: Config):
         proc.join(JOIN_WAIT_DELAY)
     for proc in evaluators:
       proc.join()
+

@@ -8,6 +8,8 @@ if (OPEN_SPIEL_BUILD_WITH_BOOST)
     mpg/mpg_generator.h
     mpg/string_compress.h
     mpg/string_compress.cc
+    mpg/bots.cc
+    mpg/bots.h
          PARENT_SCOPE )
 
   set( BOOST_DEPENDENCIES
