@@ -67,6 +67,10 @@
 #include "open_spiel/bots/xinxin/xinxin_pybind11.h"
 #endif
 
+#ifdef OPEN_SPIEL_BUILD_WITH_BOOST
+#include "open_spiel/python/pybind11/games_mpg.h"
+#endif
+
 // Flags governing Open Spiel behaviour
 ABSL_FLAG(bool, log_exceptions_to_stderr, true,
           "Log all exceptions raised in OpenSpiel C++ code to stderr.");
@@ -675,6 +679,9 @@ PYBIND11_MODULE(pyspiel, m) {
   init_pyspiel_games_trade_comm(m);  // Game-specific functions for trade_comm.
   init_pyspiel_observer(m);      // Observers and observations.
   init_pyspiel_utils(m);         // Utilities.
+#ifdef OPEN_SPIEL_BUILD_WITH_BOOST
+    init_pyspiel_games_mpg(m);  // Game-specific functions for mpg.
+#endif
 
   // List of optional python submodules.
 #if OPEN_SPIEL_BUILD_WITH_GAMUT
