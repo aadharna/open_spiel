@@ -18,8 +18,10 @@ from absl import app
 from absl import flags
 from argparse import Namespace
 
-from open_spiel.python.algorithms.alpha_zero_mpg import alpha_zero as alpha_zero
+from open_spiel.python.algorithms.alpha_zero_mpg import alpha_zero as alpha_zero_v1
+from open_spiel.python.algorithms.alpha_zero_mpg import main as alpha_zero_v2
 from open_spiel.python.algorithms.alpha_zero_mpg import model as model_lib
+from open_spiel.python.algorithms.alpha_zero_mpg import utils
 from open_spiel.python.utils import spawn
 
 flags.DEFINE_string("game", "connect_four", "Name of the game.")
@@ -57,12 +59,14 @@ flags.DEFINE_integer("max_steps", 0, "How many learn steps before exiting.")
 flags.DEFINE_bool("quiet", True, "Don't show the moves as they're played.")
 flags.DEFINE_bool("verbose", False, "Show the MCTS stats of possible moves.")
 flags.DEFINE_bool("fix_environment", False, "Fix the game environment for debugging.")
+# 1 for the first version of the algorithm, 2 for the second version.
+flags.DEFINE_integer("version",1, "Version of the algorithm.")
 
 FLAGS = flags.FLAGS
 
 
 def main(unused_argv):
-    config = alpha_zero.Config(
+    config = utils.Config(
         game=FLAGS.game,
         path=FLAGS.path,
         learning_rate=FLAGS.learning_rate,
@@ -90,8 +94,14 @@ def main(unused_argv):
         output_size=None,
         quiet=FLAGS.quiet,
         fix_environment=FLAGS.fix_environment,
+        version=FLAGS.version,
     )
-    alpha_zero.alpha_zero(config)
+    if config.version == 1:
+        alpha_zero_v1.alpha_zero(config)
+    elif config.version == 2:
+        alpha_zero_v2.alpha_zero(config)
+    else:
+        raise ValueError("Invalid version: {}".format(config.version))
 
 
 if __name__ == "__main__":

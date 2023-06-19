@@ -1,8 +1,7 @@
 import abc
 import multiprocessing
 
-from open_spiel.python.algorithms.alpha_zero_mpg.alpha_zero import _init_model_from_config
-
+from . import model as model_lib
 
 class Resource:
     def __init__(self,logger,name=None):
@@ -59,7 +58,7 @@ class SavedModelBundle(ModelResource):
         pass
 
     def _init_model(self):
-        return _init_model_from_config(self.config,self.game)
+        return model_lib.MPGModel(self.config, self.game)
 
     def _value(self):
         return self._model

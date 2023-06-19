@@ -43,10 +43,11 @@ import tempfile
 import time
 import traceback
 
+
 import numpy as np
 
 from open_spiel.python.algorithms import mcts
-from open_spiel.python.algorithms.alpha_zero_mpg import evaluator as evaluator_lib
+from open_spiel.python.algorithms.alpha_zero_mpg.mcts import evaluator as evaluator_lib
 from open_spiel.python.algorithms.alpha_zero_mpg import model as model_lib
 import pyspiel
 
@@ -55,9 +56,9 @@ from open_spiel.python.utils import data_logger
 from open_spiel.python.utils import file_logger
 from open_spiel.python.utils import spawn
 from open_spiel.python.utils import stats
-from open_spiel.python.algorithms.alpha_zero.alpha_zero_v2 import Buffer,Config
 import tensorflow as tf
 from . import utils
+from .utils import TrajectoryState,Buffer,Config
 
 
 # Time to wait for processes to join.
@@ -72,35 +73,6 @@ JOIN_WAIT_DELAY = 0.001
 #TODO: add a function to load from config
 def _init_model_from_config(config,game):
   return model_lib.MPGModel(config,game)
-
-
-def watcher(fn):
-  """A decorator to fn/processes that gives a logger and logs exceptions."""
-  @functools.wraps(fn)
-  def _watcher(*, config, num=None, **kwargs):
-    """Wrap the decorated function."""
-    name = fn.__name__
-    if num is not None:
-      name += "-" + str(num)
-    with file_logger.FileLogger(config.path, name, config.quiet) as logger:
-      print("{} started".format(name))
-      logger.print("{} started".format(name))
-      try:
-        return fn(config=config, logger=logger, **kwargs)
-      except Exception as e:
-        logger.print("\n".join([
-            "",
-            " Exception caught ".center(60, "="),
-            traceback.format_exc(),
-            "=" * 60,
-        ]))
-        print("Exception caught in {}: {}".format(name, e))
-        raise
-      finally:
-        logger.print("{} exiting".format(name))
-        print("{} exiting".format(name))
-  return _watcher
-
 
 def _init_bot(config, game, evaluator_, evaluation):
   """Initializes a bot."""
@@ -151,8 +123,7 @@ def _play_game(logger, game_num, game, bots, temperature, temperature_drop,fix_e
       action = random_state.choice(action_list, p=prob_list)
       state.apply_action(action)
     else:
-      with tf.device("/cpu:0"):
-        root = bots[state.current_player()].mcts_search(state)
+      root = bots[state.current_player()].mcts_search(state)
       policy = np.zeros(game.num_distinct_actions())
       for c in root.children:
         policy[c.action] = c.explore_count
@@ -195,7 +166,7 @@ def update_checkpoint(logger, queue, model, az_evaluator):
   return True,model
 
 
-@watcher
+@utils.watcher
 def actor(*, config, game, logger, queue):
   """An actor process runner that generates games and returns trajectories."""
   logger.print("Initializing model")
@@ -214,7 +185,7 @@ def actor(*, config, game, logger, queue):
                          config.temperature_drop,fix_environment= config.fix_environment))
 
 
-@watcher
+@utils.watcher
 def evaluator(*, game, config, logger, queue):
   """A process that plays the latest checkpoint vs standard MCTS."""
   results = Buffer(config.evaluation_window)
@@ -258,7 +229,7 @@ def evaluator(*, game, config, logger, queue):
         len(results), np.mean(results.data)))
 
 
-@watcher
+@utils.watcher
 def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
   """A learner that consumes the replay buffer and trains the network."""
   logger.also_to_stdout = True

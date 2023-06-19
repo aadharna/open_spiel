@@ -9,22 +9,41 @@
 
 namespace open_spiel::mpg
 {
-    class GreedyBot:public Bot {
-    public:
+
+    class MPGBot: public Bot
+    {
         Action Step(const State &state) override;
+        void ForceAction(const State &state, Action action) override;
+        ActionsAndProbs GetPolicy(const State &state) override;
+        std::pair<ActionsAndProbs, Action> StepWithPolicy(
+                const State &state) override;
+
+        virtual Action Step(const MPGEnvironmentState &state)=0;
+        virtual void ForceAction(const MPGEnvironmentState &state, Action action)=0;
+        virtual ActionsAndProbs GetPolicy(const MPGEnvironmentState &state)=0;
+        virtual std::pair<ActionsAndProbs, Action> StepWithPolicy(
+                const MPGEnvironmentState &state)=0;
+
+
+
+    };
+
+    class GreedyBot:public MPGBot {
+    public:
+        Action Step(const MPGEnvironmentState &state) override;
 
         // Notifies the bot that it should consider that it took action action in
         // the given state.
-        void ForceAction(const State &state, Action action) override;
+        void ForceAction(const MPGEnvironmentState &state, Action action) override;
 
         // Extends a bot to support explicit stochasticity, meaning that it can
         // return a distribution over moves.
         bool ProvidesPolicy() override;
 
-        ActionsAndProbs GetPolicy(const State &state) override;
+        ActionsAndProbs GetPolicy(const MPGEnvironmentState &state) override;
 
         std::pair<ActionsAndProbs, Action> StepWithPolicy(
-                const State &state) override;
+                const MPGEnvironmentState &state) override;
 
         // Creates a clone of the bot with an independent copy of its internal state.
         // The original bot and the clone are completely independent.
@@ -43,7 +62,7 @@ namespace open_spiel::mpg
         std::unique_ptr<Bot> Clone() override;
     };
 
-    class EpsilonGreedyBot :public Bot
+    class EpsilonGreedyBot :public MPGBot
     {
         double epsilon;
         std::mt19937_64 rng;
@@ -52,20 +71,20 @@ namespace open_spiel::mpg
         EpsilonGreedyBot(double _epsilon,std::uint64_t seed);
         EpsilonGreedyBot(double _epsilon);
 
-        Action Step(const State &state) override;
+        Action Step(const MPGEnvironmentState &state) override;
 
         // Notifies the bot that it should consider that it took action action in
         // the given state.
-        void ForceAction(const State &state, Action action) override;
+        void ForceAction(const MPGEnvironmentState &state, Action action) override;
 
         // Extends a bot to support explicit stochasticity, meaning that it can
         // return a distribution over moves.
         bool ProvidesPolicy() override;
 
-        ActionsAndProbs GetPolicy(const State &state) override;
+        ActionsAndProbs GetPolicy(const MPGEnvironmentState &state) override;
 
         std::pair<ActionsAndProbs, Action> StepWithPolicy(
-                const State &state) override;
+                const MPGEnvironmentState &state) override;
 
         // Creates a clone of the bot with an independent copy of its internal state.
         // The original bot and the clone are completely independent.
@@ -84,7 +103,7 @@ namespace open_spiel::mpg
         std::unique_ptr<Bot> Clone() override;
 
     protected:
-        Action GreedyStep(const State &state);
+        Action GreedyStep(const MPGEnvironmentState &state);
     };
 }
 

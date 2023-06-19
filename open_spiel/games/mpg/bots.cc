@@ -5,10 +5,33 @@
 
 namespace open_spiel::mpg
 {
-    Action GreedyBot::Step(const State &state)
+
+    Action MPGBot::Step(const State &state)
     {
         auto mpg=dynamic_cast<const MPGEnvironmentState*>(&state);
-        auto legal_actions_payoffs=mpg->LegalActionsWithPayoffs();
+        return Step(*mpg);
+    }
+    void MPGBot::ForceAction(const State &state, Action action)
+    {
+        auto mpg=dynamic_cast<const MPGEnvironmentState*>(&state);
+        ForceAction(*mpg,action);
+    }
+    ActionsAndProbs MPGBot::GetPolicy(const State &state)
+    {
+        auto mpg=dynamic_cast<const MPGEnvironmentState*>(&state);
+        return GetPolicy(*mpg);
+    }
+
+    std::pair<ActionsAndProbs, Action> MPGBot::StepWithPolicy(
+            const State &state)
+    {
+        auto mpg=dynamic_cast<const MPGEnvironmentState*>(&state);
+        return StepWithPolicy(*mpg);
+    }
+
+    Action GreedyBot::Step(const MPGEnvironmentState &state)
+    {
+        auto legal_actions_payoffs=state.LegalActionsWithPayoffs();
         Action best_action;
         auto current_player=state.CurrentPlayer();
         return std::max_element(legal_actions_payoffs.begin(),legal_actions_payoffs.end(),
@@ -20,7 +43,7 @@ namespace open_spiel::mpg
 
     // Notifies the bot that it should consider that it took action action in
     // the given state.
-    void GreedyBot::ForceAction(const State &state, Action action)
+    void GreedyBot::ForceAction(const MPGEnvironmentState &state, Action action)
     {
         // Do nothing
     }
@@ -30,14 +53,14 @@ namespace open_spiel::mpg
         return true;
     }
 
-    ActionsAndProbs GreedyBot::GetPolicy(const State &state)
+    ActionsAndProbs GreedyBot::GetPolicy(const MPGEnvironmentState &state)
     {
         auto step=Step(state);
         return {{step,1.0}};
     }
 
     std::pair<ActionsAndProbs, Action> GreedyBot::StepWithPolicy(
-            const State &state)
+            const MPGEnvironmentState &state)
     {
         auto step=Step(state);
         auto action_prob= GetPolicy(state);
@@ -67,7 +90,7 @@ namespace open_spiel::mpg
     }
 
 
-    Action EpsilonGreedyBot::Step(const State &state)
+    Action EpsilonGreedyBot::Step(const MPGEnvironmentState &state)
     {
         if(bernoulli(rng))
         {
@@ -79,10 +102,9 @@ namespace open_spiel::mpg
             return GreedyStep(state);
     }
 
-    Action EpsilonGreedyBot::GreedyStep(const open_spiel::State &state)
+    Action EpsilonGreedyBot::GreedyStep(const MPGEnvironmentState &state)
     {
-        auto mpg=dynamic_cast<const MPGEnvironmentState*>(&state);
-        auto legal_actions_payoffs=mpg->LegalActionsWithPayoffs();
+        auto legal_actions_payoffs=state.LegalActionsWithPayoffs();
         Action best_action;
         auto current_player=state.CurrentPlayer();
         return std::max_element(legal_actions_payoffs.begin(),legal_actions_payoffs.end(),
@@ -94,7 +116,7 @@ namespace open_spiel::mpg
 
     // Notifies the bot that it should consider that it took action action in
     // the given state.
-    void EpsilonGreedyBot::ForceAction(const State &state, Action action)
+    void EpsilonGreedyBot::ForceAction(const MPGEnvironmentState &state, Action action)
     {
         // Do nothing
     }
@@ -104,7 +126,7 @@ namespace open_spiel::mpg
         return true;
     }
 
-    ActionsAndProbs EpsilonGreedyBot::GetPolicy(const State &state)
+    ActionsAndProbs EpsilonGreedyBot::GetPolicy(const MPGEnvironmentState &state)
     {
         auto actions=state.LegalActions();
         ActionsAndProbs policy;
@@ -121,7 +143,7 @@ namespace open_spiel::mpg
     }
 
     std::pair<ActionsAndProbs, Action> EpsilonGreedyBot::StepWithPolicy(
-            const State &state)
+            const MPGEnvironmentState &state)
     {
         auto step=Step(state);
         auto action_prob= GetPolicy(state);

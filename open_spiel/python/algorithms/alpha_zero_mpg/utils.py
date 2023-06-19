@@ -1,4 +1,5 @@
 import abc
+import collections
 import functools
 import traceback
 
@@ -6,7 +7,7 @@ import numpy as np
 from open_spiel.python.utils import file_logger
 from open_spiel.python.algorithms.alpha_zero_mpg.model import nested_reshape
 import open_spiel.python.algorithms.mcts as mcts
-
+import random
 
 def watcher(fn):
     """A decorator to fn/processes that gives a logger and logs exceptions."""
@@ -55,7 +56,7 @@ class Watched(abc.ABC):
             print("{} started".format(name))
             logger.print("{} started".format(name))
             try:
-                return self.run(*args, **kwargs)
+                return self.run(*args,logger=logger, **kwargs)
             except Exception as e:
                 logger.print("\n".join([
                     "",
@@ -88,6 +89,76 @@ class TrajectoryState(object):
         self.policy = policy
         self.value = value
 
+
+class Buffer(object):
+  """A fixed size buffer that keeps the newest values."""
+
+  def __init__(self, max_size):
+    self.max_size = max_size
+    self.data = []
+    self.total_seen = 0  # The number of items that have passed through.
+
+  def __len__(self):
+    return len(self.data)
+
+  def __bool__(self):
+    return bool(self.data)
+
+  def append(self, val):
+    return self.extend([val])
+
+  def extend(self, batch):
+    batch = list(batch)
+    self.total_seen += len(batch)
+    self.data.extend(batch)
+    self.data[:-self.max_size] = []
+
+  def sample(self, count):
+    return random.sample(self.data, count)
+
+
+
+class Config(collections.namedtuple(
+    "Config", [
+        "game",
+        "path",
+        "learning_rate",
+        "weight_decay",
+        "train_batch_size",
+        "replay_buffer_size",
+        "replay_buffer_reuse",
+        "max_steps",
+        "checkpoint_freq",
+        "actors",
+        "evaluators",
+        "evaluation_window",
+        "eval_levels",
+
+        "uct_c",
+        "max_simulations",
+        "policy_alpha",
+        "policy_epsilon",
+        "temperature",
+        "temperature_drop",
+
+        "nn_model",
+        "nn_width",
+        "nn_depth",
+        "observation_shape",
+        "output_size",
+        "verbose",
+        "quiet",
+        "fix_environment",
+        "version"
+    ])):
+  """A config for the model/experiment."""
+  @property
+  def architecture(self):
+      return self.nn_model
+  pass
+  @property
+  def regularization(self):
+    return self.weight_decay
 
 class Trajectory(object):
     """A sequence of observations, actions and policies, and the outcomes."""
