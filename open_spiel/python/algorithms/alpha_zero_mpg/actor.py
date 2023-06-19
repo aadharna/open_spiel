@@ -44,6 +44,8 @@ class MultiProcActor(Actor):
             if path == "":
                 return
             model.update(path, az_evaluator)
+            logger.print("Updated model, new hash is {}.".format(model.hash()))
+
             queue.put(utils.play_game(logger, game_num, game, bots, config.temperature,
                                       config.temperature_drop, fix_environment=config.fix_environment))
     def __call__(self, logger, queue, game):

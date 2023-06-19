@@ -32,7 +32,7 @@ def init_eps_greedy_bot(config, game, evaluator_, evaluation, player_id, seed,*,
     return pyspiel.mpg.EpsilonGreedyBot
 
 
-def init_mcts_bot_general(cls,config, game, evaluator_, evaluation, player_id, seed,uct_c=None,max_simulations=None,solve=False,**kwargs):
+def init_mcts_bot_general(cls,config, game, evaluator_, evaluation,uct_c=None,max_simulations=None,solve=False,**kwargs):
     noise = None if evaluation else (config.policy_epsilon, config.policy_alpha)
     if uct_c is None:
         uct_c = config.uct_c
@@ -50,24 +50,26 @@ def init_mcts_bot_general(cls,config, game, evaluator_, evaluation, player_id, s
         dont_return_chance_node=True)
 
 @register_bot("py-mcts")
-def init_mcts_bot(config, game, evaluator_, evaluation, player_id, seed,uct_c=None,max_simulations=None,solve=False,**kwargs):
+def init_mcts_bot(config, game, evaluator_, evaluation,uct_c=None,max_simulations=None,solve=False,**kwargs):
     """Initializes a bot."""
-    return init_mcts_bot_general(mcts.MCTSBot,config, game, evaluator_, evaluation, player_id, seed,**kwargs)
+    return init_mcts_bot_general(mcts.MCTSBot,config, game, evaluator_, evaluation,
+                                 uct_c=uct_c, max_simulations=max_simulations, solve=solve,**kwargs)
 
 
 @register_bot("mcts")
-def init_mcts_bot_default(config, game, evaluator_, evaluation, player_id, seed,uct_c=None,max_simulations=None,solve=False,**kwargs):
-    return init_mcts_bot(config, game, evaluator_, evaluation, player_id, seed)
+def init_mcts_bot_default(config, game, evaluator_, evaluation,uct_c=None,max_simulations=None,solve=False,**kwargs):
+    return init_mcts_bot(config, game, evaluator_, evaluation,uct_c=uct_c, max_simulations=max_simulations, solve=solve,**kwargs)
 
 
 @register_bot("cpp-mcts")
-def init_mcts_cpp_bot(config, game, evaluator_, evaluation, player_id, seed,uct_c=None,max_simulations=None,solve=False,**kwargs):
+def init_mcts_cpp_bot(config, game, evaluator_, evaluation,uct_c=None,max_simulations=None,solve=False,**kwargs):
     """Initializes a bot."""
-    return init_mcts_bot_general(pyspiel.MCTSBot, config, game, evaluator_, evaluation, player_id, seed, **kwargs)
+    return init_mcts_bot_general(pyspiel.MCTSBot, config=config, game=game, evaluator_=evaluator_, evaluation=evaluation,
+                                 uct_c=uct_c, max_simulations=max_simulations, solve=solve,**kwargs)
 
 
 @register_bot("random")
-def init_random_bot(config, game, evaluator_, evaluation, player_id, seed,**kwargs):
+def init_random_bot(player_id, seed=None,**kwargs):
     """Initializes a bot."""
     return uniform_random.UniformRandomBot(player_id, np.random.RandomState(seed))
 

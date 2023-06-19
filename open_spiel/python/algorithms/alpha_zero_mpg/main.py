@@ -28,8 +28,8 @@ class LocalEvaluatorFactory:
         self.specs = specs
         pass
 
-    def __call__(self, config, game, queue, num):
-        eval = evaluator.MultiProcEvaluator(config, num, name="evaluator")
+    def __call__(self, config, game, queue, num, opponent="mcts"):
+        eval = evaluator.MultiProcEvaluator(config, num, name="evaluator",opponent=opponent)
         return eval.start(queue=queue, game=game)
 
 
@@ -88,7 +88,7 @@ def alpha_zero(config: Config):
                                          "num": i})
             for i in range(config.actors)]
   evaluators = [spawn.Process(evaluator_factory, kwargs={"game": game, "config": config,
-                                                 "num": i})
+                                                 "num": i, "opponent":"greedy"})
                 for i in range(config.evaluators)]
 
   def broadcast(msg):

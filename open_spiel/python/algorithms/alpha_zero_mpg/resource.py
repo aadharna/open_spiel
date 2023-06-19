@@ -1,20 +1,23 @@
 import abc
 import multiprocessing
 
-from . import model as model_lib
+import numpy as np
+
+from . import model as model_lib, utils
+
 
 class Resource:
-    def __init__(self,logger,name=None):
+    def __init__(self, logger, name=None):
         if name is None:
             name = self.__class__.__name__
-        self.name=name
+        self.name = name
         self._lock = multiprocessing.Lock()
-        self.logger=logger
+        self.logger = logger
 
-    def update(self,*args,**kwargs):
+    def update(self, *args, **kwargs):
         self._lock.acquire()
         try:
-            self._update(*args,**kwargs)
+            self._update(*args, **kwargs)
             return True
         finally:
             self._lock.release()
@@ -34,26 +37,50 @@ class Resource:
         pass
 
     @abc.abstractmethod
-    def _update(self,*args,**kwargs):
+    def _update(self, *args, **kwargs):
         pass
 
 
 class ModelResource(Resource):
-    def __init__(self,logger,config,name=None):
-        super().__init__(logger,name)
+    def __init__(self, logger, config, name=None):
+        super().__init__(logger, name)
+        #We fix the seed here so that the hashing function is deterministic
         self.config = config
         self.model = self._init_model()
+        # This is does not need to be a strong hash function, just needs to check if the model has changed
+        self.hasher = utils.AlmostUniversalHasher.deterministic_instance()
         pass
+
 
     @abc.abstractmethod
     def _init_model(self):
         pass
 
+    @classmethod
+    def from_model(cls, model,logger,config,name=None):
+        resource =  ModelResource.__new__(cls)
+        resource.model = model
+        resource.config = config
+        resource.logger = logger
+        resource.name = name
+        resource.hasher = utils.AlmostUniversalHasher.deterministic_instance()
+
+        return resource
+
+
+
+    def hash(self):
+        variables = self.model.trainable_variables
+        hash_list = []
+        # We hope that the list is guaranteed to be in the same order
+        for var in variables:
+            hash_list.append(int.from_bytes(var.numpy().tobytes(), byteorder="big"))
+        return self.hasher.hash(hash_list)
 
 class SavedModelBundle(ModelResource):
-    def __init__(self,logger,config,game,name=None):
+    def __init__(self, logger, config, game, name=None):
         self.game = game
-        super().__init__(logger,config,name)
+        super().__init__(logger, config, name)
         self._model = self._init_model()
         pass
 
@@ -63,8 +90,8 @@ class SavedModelBundle(ModelResource):
     def _value(self):
         return self._model
 
-    def _update(self,path:str,az_evaluator):
-        logger=self.logger
+    def _update(self, path: str, az_evaluator):
+        logger = self.logger
         if path:
             logger.print("Inference cache:", az_evaluator.cache_info())
             logger.print("Loading checkpoint", path)

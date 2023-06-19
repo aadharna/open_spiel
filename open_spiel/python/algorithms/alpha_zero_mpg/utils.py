@@ -2,6 +2,7 @@ import abc
 import collections
 import functools
 import traceback
+from typing import Iterable
 
 import numpy as np
 from open_spiel.python.utils import file_logger
@@ -229,3 +230,20 @@ def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_e
     logger.print("Game {}: Returns: {}; Actions: {}".format(
         game_num, " ".join(map(str, trajectory.returns)), " ".join(actions)))
     return trajectory
+
+
+class AlmostUniversalHasher:
+
+    def __init__(self,x,mod):
+        self.x = x
+        self.mod = mod
+
+    def hash(self,data):
+        if isinstance(data,Iterable):
+            return sum([self.hash(t)* self.x.__pow__(i,self.mod) for i,t in enumerate(data)]) % self.mod
+        else:
+            return hash(data) % self.mod
+
+    @classmethod
+    def deterministic_instance(cls):
+        return cls(x=2654435761,mod=18446744073709551557)

@@ -5,9 +5,8 @@ from open_spiel.python.algorithms.alpha_zero.alpha_zero_v2 import Buffer
 from open_spiel.python.algorithms.alpha_zero_mpg.utils import watcher
 from open_spiel.python.utils import data_logger, stats, spawn
 
-from . import utils
-from . import model as model_lib
-from . import actor, evaluator
+
+from . import utils, model as model_lib, actor, evaluator, resource
 
 @watcher
 def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
@@ -17,6 +16,7 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
   learn_rate = config.replay_buffer_size // config.replay_buffer_reuse
   logger.print("Initializing model")
   model = model_lib.MPGModel(config,game)
+  model_resource=resource.ModelResource.from_model(model=model,logger=logger,config=config,name="learner")
   logger.print("Model type: %s(%s, %s)" % (config.nn_model, config.nn_width,
                                            config.nn_depth))
   logger.print("Model size:", model.count_trainable_variables(), "variables")
@@ -98,6 +98,7 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
     losses = sum(losses, model_lib.Losses(0, 0, 0)) / len(losses)
     logger.print(losses)
     logger.print("Checkpoint saved:", save_path)
+    logger.print("Broadcasting checkpoint. Model hash is", model_resource.hash())
     return save_path, losses
 
   last_time = time.time() - 60
