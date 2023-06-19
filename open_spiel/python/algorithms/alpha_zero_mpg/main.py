@@ -88,7 +88,7 @@ def alpha_zero(config: Config):
                                          "num": i})
             for i in range(config.actors)]
   evaluators = [spawn.Process(evaluator_factory, kwargs={"game": game, "config": config,
-                                                 "num": i, "opponent":"greedy"})
+                                                 "num": i, "opponent":"random"})
                 for i in range(config.evaluators)]
 
   def broadcast(msg):

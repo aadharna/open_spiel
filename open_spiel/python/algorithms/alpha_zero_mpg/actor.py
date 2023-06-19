@@ -5,7 +5,8 @@ import traceback
 from open_spiel.python.algorithms.alpha_zero_mpg import utils
 from open_spiel.python.utils import spawn
 
-from .mcts import evaluator as evaluator_lib
+from .mcts import evaluator as mcts_evaluator
+from .mcts import guide as mcts_guide
 from . import resource,bots as bots_lib
 
 
@@ -27,7 +28,8 @@ class MultiProcActor(Actor):
         logger.print("Initializing model")
         model = resource.SavedModelBundle(logger, config, game)
         logger.print("Initializing bots")
-        az_evaluator = evaluator_lib.MPGAlphaZeroEvaluator(game, model)
+        guide=mcts_guide.LinearGuide(t=0.3,payoffs_prior=mcts_guide.PayoffsSoftmaxPrior())
+        az_evaluator = mcts_evaluator.GuidedAlphaZeroEvaluator(game, model,guide)
         bots = [
             bots_lib.init_bot(config=config, game=game, evaluator_=az_evaluator, evaluation=False,
                               bot_type="alpha-zero"),
@@ -43,8 +45,9 @@ class MultiProcActor(Actor):
                     break
             if path == "":
                 return
-            model.update(path, az_evaluator)
-            logger.print("Updated model, new hash is {}.".format(model.hash()))
+            is_updated= model.update(path, az_evaluator)
+            if is_updated:
+                logger.print("Updated model, new hash is {}.".format(model.hash()))
 
             queue.put(utils.play_game(logger, game_num, game, bots, config.temperature,
                                       config.temperature_drop, fix_environment=config.fix_environment))

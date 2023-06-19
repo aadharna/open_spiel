@@ -3,11 +3,11 @@ import itertools
 import traceback
 
 import numpy as np
-from open_spiel.python.algorithms.alpha_zero.alpha_zero_v2 import Buffer
+from .utils import Buffer
 from open_spiel.python.utils import spawn
 import open_spiel.python.algorithms.mcts as mcts
 
-from .mcts import evaluator as evaluator_lib
+from .mcts import evaluator as mcts_evaluator, guide as mcts_guide
 from . import resource,utils,bots as bots_lib
 
 
@@ -29,7 +29,8 @@ class MultiProcEvaluator(Evaluator):
         logger.print("Initializing model")
         model = resource.SavedModelBundle(logger, config, game)
         logger.print("Initializing bots")
-        az_evaluator = evaluator_lib.MPGAlphaZeroEvaluator(game, model)
+        guide=mcts_guide.LinearGuide(t=0.3,payoffs_prior=mcts_guide.PayoffsSoftmaxPrior())
+        az_evaluator = mcts_evaluator.GuidedAlphaZeroEvaluator(game, model,guide)
         random_evaluator = mcts.RandomRolloutEvaluator()
 
         for game_num in itertools.count():
@@ -41,8 +42,9 @@ class MultiProcEvaluator(Evaluator):
                     break
             if path == "":
                 return
-            model.update(path, az_evaluator)
-            logger.print("Updated model, new hash is {}.".format(model.hash()))
+            is_updated=model.update(path, az_evaluator)
+            if is_updated:
+                logger.print("Updated model, new hash is {}.".format(model.hash()))
             # Alternate between playing as player Max and player Min.
             az_player = game_num % 2
             # Each difficulty is repeated twice, once per player. Hence, the Euclidean division by 2.

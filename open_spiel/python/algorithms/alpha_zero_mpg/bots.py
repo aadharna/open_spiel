@@ -4,6 +4,7 @@ import numpy as np
 import open_spiel.python.algorithms.mcts as mcts
 import open_spiel.python.bots.uniform_random as uniform_random
 import pyspiel
+from .mcts import evaluator as mcts_evaluator,guide as mcts_guide
 
 REGISTERED_BOTS = {}
 
@@ -66,6 +67,7 @@ def init_mcts_cpp_bot(config, game, evaluator_, evaluation,uct_c=None,max_simula
     """Initializes a bot."""
     return init_mcts_bot_general(pyspiel.MCTSBot, config=config, game=game, evaluator_=evaluator_, evaluation=evaluation,
                                  uct_c=uct_c, max_simulations=max_simulations, solve=solve,**kwargs)
+
 
 
 @register_bot("random")

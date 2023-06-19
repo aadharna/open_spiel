@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """An MCTS Evaluator for an AlphaZero model."""
-from typing import List
+from typing import List, Callable, Union, Iterable
 
 import numpy as np
 
@@ -23,11 +23,13 @@ from open_spiel.python.utils import lru_cache
 from open_spiel.python.algorithms.alpha_zero import evaluator as evaluator_lib
 import tensorflow as tf
 from open_spiel.python.algorithms.alpha_zero_mpg.model import nested_reshape
+from .utils import FloatArrayLikeType
 
 from .. import resource
 
 
-class MPGAlphaZeroEvaluator(evaluator_lib.AlphaZeroEvaluator):
+
+class AlphaZeroEvaluator(evaluator_lib.AlphaZeroEvaluator):
     """An AlphaZero MCTS Evaluator."""
 
     def __init__(self, game, model, cache_size=2 ** 16):
@@ -50,7 +52,6 @@ class MPGAlphaZeroEvaluator(evaluator_lib.AlphaZeroEvaluator):
         environment = np.expand_dims(environment, 0)
         state = np.expand_dims(state, 0)
 
-        # ndarray isn't hashable
         cache_key = (game_state.current_player(), int(state))
         value, policy = self._cache.make(
             cache_key, lambda: self.model.inference(environment, state))
@@ -75,6 +76,27 @@ class MPGAlphaZeroEvaluator(evaluator_lib.AlphaZeroEvaluator):
             return self._model_bundle.value
         else:
             return self._model
+
+
+class GuidedAlphaZeroEvaluator(AlphaZeroEvaluator):
+    """
+    an Alpha Zero evaluator with a guide function.
+    A guide function is a function that takes the prior probabilities and the action payoffs and gives a more informed guess
+    of the transition probabilities
+    """
+    def __init__(self, game, model, policy_map: Callable[[FloatArrayLikeType,FloatArrayLikeType],FloatArrayLikeType], cache_size=2 ** 16):
+        super().__init__(game,model,cache_size)
+        self.policy_map=policy_map
+
+    def prior(self, state):
+        payoffs=state.legal_actions_with_payoffs()
+        legal_actions=payoffs.keys()
+        _,model_prior=self._inference(state)
+        payoffs_numpy = np.zeros_like(model_prior)
+        for u in payoffs:
+            payoffs_numpy[u]=payoffs[u]
+        policy=self.policy_map(model_prior,payoffs_numpy)
+        return [(action, policy[action]) for action in legal_actions]
 
 
 class StochasticEvaluator(mcts.Evaluator):
