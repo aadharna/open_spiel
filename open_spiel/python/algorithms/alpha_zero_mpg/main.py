@@ -11,7 +11,8 @@ JOIN_WAIT_DELAY = 0.001
 
 
 from .utils import Config
-from . import learner, actor, evaluator,utils
+from .services import learner, evaluator, actor
+
 
 class LocalActorFactory:
     def __init__(self,specs):
@@ -29,7 +30,7 @@ class LocalEvaluatorFactory:
         pass
 
     def __call__(self, config, game, queue, num, opponent="mcts"):
-        eval = evaluator.MultiProcEvaluator(config, num, name="evaluator",opponent=opponent)
+        eval = evaluator.MultiProcEvaluator(config, num, name="evaluator", opponent=opponent)
         return eval.start(queue=queue, game=game)
 
 
@@ -97,7 +98,7 @@ def alpha_zero(config: Config):
 
   try:
     learner.learner(game=game, config=config, actors=actors,  # pylint: disable=missing-kwoa
-            evaluators=evaluators, broadcast_fn=broadcast)
+                    evaluators=evaluators, broadcast_fn=broadcast)
   except (KeyboardInterrupt, EOFError):
     print("Caught a KeyboardInterrupt, stopping early.")
   finally:
