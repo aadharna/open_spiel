@@ -41,12 +41,13 @@ def watcher(fn):
 
 
 class Watched(abc.ABC):
-    def __init__(self, config, num=None, name=None):
+    def __init__(self, config, num=None, name=None, *, to_stdout=False):
         self.config = config
         self.num = num
         if name is None:
             name = self.__class__.__name__
         self.name = name
+        self.to_stdout = to_stdout
         pass
 
     def start(self, *args, **kwargs):
@@ -54,6 +55,7 @@ class Watched(abc.ABC):
         if self.num is not None:
             name += "-" + str(self.num)
         with file_logger.FileLogger(self.config.path, name, self.config.quiet) as logger:
+            logger.also_to_stdout = self.to_stdout
             print("{} started".format(name))
             logger.print("{} started".format(name))
             try:

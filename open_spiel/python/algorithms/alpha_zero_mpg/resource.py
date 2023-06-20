@@ -46,7 +46,7 @@ class ModelResource(Resource):
         super().__init__(logger, name)
         #We fix the seed here so that the hashing function is deterministic
         self.config = config
-        self.model = self._init_model()
+        self._model = self._init_model()
         # This is does not need to be a strong hash function, just needs to check if the model has changed
         self.hasher = utils.AlmostUniversalHasher.deterministic_instance()
         pass
@@ -58,7 +58,8 @@ class ModelResource(Resource):
 
     @classmethod
     def from_model(cls, model,logger,config,name=None):
-        resource =  ModelResource.__new__(cls)
+        resource =  cls.__new__(cls)
+        resource._lock = multiprocessing.Lock()
         resource.model = model
         resource.config = config
         resource.logger = logger
@@ -67,10 +68,11 @@ class ModelResource(Resource):
 
         return resource
 
-
+    def _value(self):
+        return self._model
 
     def hash(self):
-        variables = self.model.trainable_variables
+        variables = self._model.trainable_variables
         hash_list = []
         # We hope that the list is guaranteed to be in the same order
         for var in variables:
@@ -81,21 +83,17 @@ class SavedModelBundle(ModelResource):
     def __init__(self, logger, config, game, name=None):
         self.game = game
         super().__init__(logger, config, name)
-        self._model = self._init_model()
         pass
 
     def _init_model(self):
         return model_lib.MPGModel(self.config, self.game)
-
-    def _value(self):
-        return self._model
 
     def _update(self, path: str, az_evaluator):
         logger = self.logger
         if path:
             logger.print("Inference cache:", az_evaluator.cache_info())
             logger.print("Loading checkpoint", path)
-            self.model.load_latest_checkpoint()
+            self._model.load_latest_checkpoint()
             az_evaluator.clear_cache()
             return True
         return False

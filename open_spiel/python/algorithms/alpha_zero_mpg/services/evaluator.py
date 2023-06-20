@@ -3,12 +3,12 @@ import itertools
 import traceback
 
 import numpy as np
-from open_spiel.open_spiel.python.algorithms.alpha_zero_mpg.utils import Buffer
+from open_spiel.python.algorithms.alpha_zero_mpg.utils import Buffer
 from open_spiel.python.utils import spawn
 import open_spiel.python.algorithms.mcts as mcts
 
-from open_spiel.open_spiel.python.algorithms.alpha_zero_mpg.mcts import evaluator as mcts_evaluator, guide as mcts_guide
-from open_spiel.open_spiel.python.algorithms.alpha_zero_mpg import resource,utils,bots as bots_lib
+from open_spiel.python.algorithms.alpha_zero_mpg.mcts import evaluator as mcts_evaluator, guide as mcts_guide
+from open_spiel.python.algorithms.alpha_zero_mpg import resource,utils,bots as bots_lib
 
 
 class Evaluator(utils.Watched):

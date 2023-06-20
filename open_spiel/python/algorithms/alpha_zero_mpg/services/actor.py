@@ -5,9 +5,9 @@ import traceback
 from open_spiel.python.algorithms.alpha_zero_mpg import utils
 from open_spiel.python.utils import spawn
 
-from open_spiel.open_spiel.python.algorithms.alpha_zero_mpg.mcts import evaluator as mcts_evaluator
-from open_spiel.open_spiel.python.algorithms.alpha_zero_mpg.mcts import guide as mcts_guide
-from open_spiel.open_spiel.python.algorithms.alpha_zero_mpg import resource,bots as bots_lib
+from open_spiel.python.algorithms.alpha_zero_mpg.mcts import evaluator as mcts_evaluator
+from open_spiel.python.algorithms.alpha_zero_mpg.mcts import guide as mcts_guide
+from open_spiel.python.algorithms.alpha_zero_mpg import resource,bots as bots_lib
 
 
 class Actor(utils.Watched):
