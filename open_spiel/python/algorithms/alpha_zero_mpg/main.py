@@ -1,16 +1,22 @@
 import datetime
 import json
+import multiprocessing
+import threading
 import os
 import sys
 import tempfile
+import tensorflow as tf
 
 import pyspiel
 from open_spiel.python.utils import spawn
+
+from open_spiel.python.algorithms.alpha_zero_mpg import dto
 
 JOIN_WAIT_DELAY = 0.001
 
 from open_spiel.python.algorithms.alpha_zero_mpg.utils import Config
 from open_spiel.python.algorithms.alpha_zero_mpg.services import learner, evaluator, actor
+import reverb
 
 
 class LocalActorFactory:
@@ -90,24 +96,48 @@ def alpha_zero(config: Config):
     evaluators = [spawn.Process(evaluator_factory, kwargs={"game": game, "config": config,
                                                            "num": i, "opponent": "random"})
                   for i in range(config.evaluators)]
-
-    def broadcast(msg):
-        for proc in actors + evaluators:
-            proc.queue.put(msg)
-
     try:
-        adapter = learner.Learner(game=game, config=config, actors=actors, evaluators=evaluators)
+        model_broadcaster = dto.ProcessesBroadcaster(actors + evaluators)
+
+        if config.grpc:
+            table=reverb.Table(
+                 name=config.grpc_table,
+                 sampler=reverb.selectors.Uniform(),
+                 remover=reverb.selectors.Fifo(),
+                 max_size=config.replay_buffer_size,
+                 rate_limiter=reverb.rate_limiters.MinSize(config.grpc_min_size),
+                signature= [tf.TensorSpec(shape=(None,None,2), dtype=tf.float32),
+                     tf.TensorSpec(shape=(1,), dtype=tf.float32),
+                     tf.TensorSpec(shape=(), dtype=tf.float32),
+                     tf.TensorSpec(shape=(None,), dtype=tf.float32)]
+            )
+            reverb_server = reverb.Server(tables=[table], port=config.grpc_port)
+            replay_buffer=dto.GrpcReplayBuffer(address=config.grpc_address, port=config.grpc_port,table=config.grpc_table)
+            actors_orchestrator=dto.ActorsGrpcOrchestrator(actors,server_address=config.grpc_address,server_port=config.grpc_port,table=config.grpc_table,
+                                                           server_max_workers=10,
+                                                           max_buffer_size=config.replay_buffer_size,
+                                                           max_game_length=game.max_game_length(),
+                                                           request_length=64)
+
+            thread=threading.Thread(target=dto.ActorsGrpcOrchestrator.collect,args=(actors_orchestrator,),daemon=True)
+            thread.start()
+
+        else:
+            replay_buffer=dto.QueuesReplayBuffer(config.replay_buffer_size, config.replay_buffer_reuse,
+                                                        actors=actors, max_game_length=game.max_game_length())
+        adapter = learner.Learner(config=config, replay_buffer=replay_buffer,model_broadcaster=model_broadcaster)
         adapter.start(game)
     except (KeyboardInterrupt, EOFError):
         print("Caught a KeyboardInterrupt, stopping early.")
     finally:
-        broadcast("")
+        process_broadcaster = dto.ProcessesBroadcaster(actors + evaluators)
+        process_broadcaster.request_exit()
         # for actor processes to join we have to make sure that their q_in is empty,
         # including backed up items
-        for proc in actors:
-            while proc.exitcode is None:
-                while not proc.queue.empty():
-                    proc.queue.get_nowait()
-                proc.join(JOIN_WAIT_DELAY)
-        for proc in evaluators:
-            proc.join()
+        #for proc in actors:
+        #    while proc.exitcode is None:
+        #        while not proc.queue.empty():
+        #            proc.queue.get_nowait()
+        #        proc.join(JOIN_WAIT_DELAY)
+        #for proc in evaluators:
+        #    proc.join()

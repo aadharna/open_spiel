@@ -12,11 +12,10 @@ from open_spiel.python.algorithms.alpha_zero_mpg import utils, model as model_li
 
 
 class Learner(utils.Watched):
-    def __init__(self, config,game, actors, evaluators, num=None, name=None):
+    def __init__(self, config, replay_buffer,model_broadcaster, num=None, name=None):
         super().__init__(config, num, name,to_stdout=True)
-        self.replay_buffer = dto.QueuesReplayBuffer(config.replay_buffer_size, config.replay_buffer_reuse,
-                                                    actors=actors, max_game_length=game.max_game_length())
-        self.model_broadcaster = dto.QueuesModelBroadcaster(actors + evaluators)
+        self.replay_buffer = replay_buffer
+        self.model_broadcaster= model_broadcaster
 
     def learn(self, step, model_resource: ModelResource, logger):
         config = self.config
@@ -25,7 +24,10 @@ class Learner(utils.Watched):
         # for _ in range(len(replay_buffer) // config.train_batch_size):
         #  data = replay_buffer.sample(config.train_batch_size)
         #  losses.append(model.update(data))
-        data = self.replay_buffer.sample(len(self.replay_buffer))
+        if self.replay_buffer.supports_dataset:
+            data = self.replay_buffer.dataset()
+        else:
+            data = self.replay_buffer.sample(64)
         model = model_resource.value
         losses.append(model.update(data))
         # Always save a checkpoint, either for keeping or for loading the weights to
@@ -187,7 +189,7 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
                 outcomes.add(2)
 
             replay_buffer.extend(
-                model_lib.TrainInput(s.environment, s.state, s.policy, p1_outcome)
+                model_lib.TrainInput(environment=s.environment, state=s.state, policy=s.policy, value=p1_outcome)
                 for s in trajectory.states)
 
             for stage in range(stage_count):

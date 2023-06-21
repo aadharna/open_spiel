@@ -61,6 +61,13 @@ flags.DEFINE_bool("verbose", False, "Show the MCTS stats of possible moves.")
 flags.DEFINE_bool("fix_environment", False, "Fix the game environment for debugging.")
 # 1 for the first version of the algorithm, 2 for the second version.
 flags.DEFINE_integer("version",1, "Version of the algorithm.")
+flags.DEFINE_integer("grpc_port",12368, "Port for the grpc server.")
+flags.DEFINE_bool("grpc", False, "Use grpc server.")
+flags.DEFINE_string("grpc_address", "localhost", "Address for the grpc server.")
+flags.DEFINE_string("grpc_table", "mpg", "Table name for the grpc server.")
+flags.DEFINE_integer("grpc_min_size", 1024, "Minimum size of extracted dataset.")
+flags.DEFINE_integer("steps_per_epoch", 64, "Number of steps per epoch.")
+flags.DEFINE_integer("epochs_per_iteration", 6, "Number of epochs.")
 
 FLAGS = flags.FLAGS
 
@@ -95,6 +102,13 @@ def main(unused_argv):
         quiet=FLAGS.quiet,
         fix_environment=FLAGS.fix_environment,
         version=FLAGS.version,
+        grpc_port=FLAGS.grpc_port,
+        grpc=FLAGS.grpc,
+        grpc_table=FLAGS.grpc_table,
+        steps_per_epoch=FLAGS.steps_per_epoch,
+        epochs_per_iteration=FLAGS.epochs_per_iteration,
+        grpc_min_size=FLAGS.grpc_min_size,
+        grpc_address=FLAGS.grpc_address,
     )
     if config.version == 1:
         alpha_zero_v1.alpha_zero(config)

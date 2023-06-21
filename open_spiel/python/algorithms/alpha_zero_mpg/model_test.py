@@ -19,6 +19,8 @@ from absl.testing import parameterized
 
 import numpy as np
 
+import open_spiel.python.algorithms.alpha_zero_mpg.utils
+import open_spiel.python.algorithms.alpha_zero.model_v2
 from . import model as model_lib
 from . import alpha_zero
 import pyspiel
@@ -43,7 +45,7 @@ def solve_game(state):
   best_actions = np.where((values == value) & act_mask)
   policy = np.zeros_like(act_mask)
   policy[best_actions[0][0]] = 1  # Choose the first for a deterministic policy.
-  solved[state_str] = model_lib.TrainInput(obs, act_mask, policy, value)
+  solved[state_str] = open_spiel.open_spiel.python.algorithms.alpha_zero_mpg.utils.TrainInput(obs, act_mask, policy, value)
   return value
 
 
@@ -70,7 +72,8 @@ class ModelTest(parameterized.TestCase):
       action = state.legal_actions()[0]
       policy = np.zeros(len(act_mask), dtype=float)
       policy[action] = 1
-      train_inputs.append(model_lib.TrainInput(obs, act_mask, policy, value=1))
+      train_inputs.append(
+          open_spiel.python.algorithms.alpha_zero.model_v2.TrainInput(obs, act_mask, policy, value=1))
       state.apply_action(action)
       value, policy = model.inference([obs], [act_mask])
       self.assertLen(policy, 1)

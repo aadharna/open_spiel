@@ -3,22 +3,22 @@ import math
 import time
 from typing import List, Dict, TypedDict, Union
 
+import numpy as np
 from open_spiel.python.utils import spawn, stats
+
+import open_spiel.python.algorithms.alpha_zero_mpg.utils
 from . import utils, model as model_lib
 import random
+import reverb
 from .services import actor
 
 
 class TrajectoryCollector(abc.ABC):
 
     @abc.abstractmethod
-    def collect(self, replay_buffer: utils.Buffer):
+    def collect(self):
         pass
 
-
-class DefaultTrajectoryCollector(TrajectoryCollector):
-    def collect(self, replay_buffer):
-        pass
 
 
 class ProcessesTrajectoryCollector(TrajectoryCollector):
@@ -38,7 +38,7 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
         pass
 
     def __init__(self, processes: List[spawn.Process], stage_count: int = None, max_game_length=None, learn_rate=None,
-                 wait_duration: float = 0.01):
+                 wait_duration: float = 0.01,block_until_ready:bool=False):
         self.processes = processes
         if stage_count is None:
             stage_count = self.STAGE_COUNT_DEFAULT
@@ -50,6 +50,7 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
         self.max_game_length = max_game_length
         self.learn_rate = learn_rate
         self.wait_duration = wait_duration
+        self.block_until_ready=block_until_ready
         pass
 
     def combiner(self):
@@ -57,7 +58,10 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
             found = 0
             for actor_process in self.processes:
                 try:
-                    yield actor_process.queue.get_nowait()
+                    if self.block_until_ready:
+                        yield actor_process.queue.get()
+                    else:
+                        yield actor_process.queue.get_nowait()
                 except spawn.Empty:
                     pass
                 else:
@@ -66,7 +70,7 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
                 time.sleep(self.wait_duration)  # 10ms
         pass
 
-    def collect(self, replay_buffer):
+    def collect(self):
         num_trajectories = 0
         num_states = 0
         game_lengths = stats.BasicStats()
@@ -77,7 +81,7 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
         outcomes = stats.HistogramNamed(["PlayerMax", "PlayerMin", "Draw"])
         value_accuracies = [stats.BasicStats() for _ in range(stage_count)]
         value_predictions = [stats.BasicStats() for _ in range(stage_count)]
-
+        train_inputs = []
         for trajectory in self.combiner():
             num_trajectories += 1
             num_states += len(trajectory.states)
@@ -92,9 +96,9 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
             else:
                 outcomes.add(2)
 
-            replay_buffer.extend(
-                model_lib.TrainInput(s.environment, s.state, s.policy, p1_outcome)
-                for s in trajectory.states)
+            train_inputs.extend(
+                utils.TrainInput(environment=s.environment, state=s.state,
+                                 value=p1_outcome,policy=s.policy) for s in trajectory.states)
 
             for stage in range(stage_count):
                 # Scale for the length of the game
@@ -106,7 +110,7 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
 
             if num_states >= learn_rate:
                 break
-        return self.CollectedMetadata(num_trajectories=num_trajectories,
+        return train_inputs,self.CollectedMetadata(num_trajectories=num_trajectories,
                                       num_states=num_states,
                                       outcomes=outcomes.data,
                                       game_lengths=game_lengths.as_dict,
@@ -114,6 +118,56 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
                                       value_accuracies=[v.as_dict for v in value_accuracies],
                                       value_predictions=[v.as_dict for v in value_predictions])
 
+
+class ProcessOrchestrator:
+    def __init__(self,processes:List[spawn.Process]):
+        self.processes=processes
+        pass
+
+    def broadcast(self,message):
+        for process in self.processes:
+            process.queue.put(message)
+        pass
+
+    def collect(self):
+        return [process.queue.get() for process in self.processes]
+
+
+class ActorsGrpcOrchestrator(ProcessOrchestrator):
+
+    def __init__(self,actors:List[spawn.Process],server_address:str,server_port:int,table:str,server_max_workers:int,
+                 max_buffer_size:int,max_game_length,request_length=1024,server_timeout:int=30):
+        super().__init__(actors)
+        self.collector=ProcessesTrajectoryCollector(actors,max_game_length=max_game_length,learn_rate=request_length,block_until_ready=False)
+        self.server_address=server_address
+        self.server_port=server_port
+        self.table=table
+        self.server_max_workers=server_max_workers
+        self.server_timeout=server_timeout
+        self.client=reverb.Client(f"{self.server_address}:{self.server_port}")
+        self.max_buffer_size=max_buffer_size
+        self._stop_request=False
+
+    def collect(self):
+        while not self._stop_request:
+            train_inputs,metadata=self.collector.collect()
+            with self.client.writer(self.max_buffer_size) as writer:
+                for train_input in train_inputs:
+                    #The order of the keys is important
+                    train_input_dict=[
+                        np.array(train_input.environment,dtype=np.float32),
+                        np.array(train_input.state,dtype=np.float32),
+                        np.array(train_input.value,dtype=np.float32),
+                        np.array(train_input.policy,dtype=np.float32)
+                    ]
+                    writer.append(train_input_dict)
+                    writer.create_item(self.table, num_timesteps=1,priority=1.0)
+                writer.flush()
+        pass
+
+    def stop(self):
+        self._stop_request=True
+        pass
 
 class ReplayBufferAdapter(abc.ABC):
 
@@ -140,6 +194,8 @@ class ReplayBufferAdapter(abc.ABC):
     def length(self) -> int:
         pass
 
+
+
     def update(self):
         pass
 
@@ -153,6 +209,16 @@ class ReplayBufferAdapter(abc.ABC):
 
     def __bool__(self) -> bool:
         return self.length() == 0
+
+    def dataset(self):
+        raise NotImplementedError("The dataset method is not implemented for this replay buffer")
+
+    @property
+    def supports_dataset(self):
+        return False
+
+    def max_length(self):
+        return -1
 
 
 class QueuesReplayBuffer(ReplayBufferAdapter):
@@ -169,7 +235,8 @@ class QueuesReplayBuffer(ReplayBufferAdapter):
         self.current_analysis_data: Union[ProcessesTrajectoryCollector.CollectedMetadata, None] = None
 
     def update(self):
-        self.current_analysis_data = self.trajectory_collector.collect(self.replay_buffer)
+        train_data,self.current_analysis_data = self.trajectory_collector.collect()
+        self.replay_buffer.extend(train_data)
 
     @property
     def analysis_data(self) -> Dict:
@@ -190,18 +257,62 @@ class QueuesReplayBuffer(ReplayBufferAdapter):
     def length(self) -> int:
         return len(self.replay_buffer)
 
+    def max_length(self):
+        return self.replay_buffer_size
 
-class gRPCReplayBuffer(ReplayBufferAdapter):
+
+class GrpcReplayBuffer(ReplayBufferAdapter):
+    def __init__(self,address:str,port:int,table:str):
+        super().__init__()
+        self.address=address
+        self.port=port
+        self.table=table
+        self.client=reverb.Client(f"{self.address}:{self.port}")
     pass
 
+    def update(self):
+        pass
 
-class ModelBroadcaster(abc.ABC):
+    @property
+    def learn_rate(self):
+        raise NotImplementedError("The learn rate is not implemented for this replay buffer")
+
+    def max_length(self):
+        return self.client.server_info()[self.table].max_size
+
+
+    def sample_by_numbers(self, n):
+        data= self.client.sample(self.table,n)
+        #Each sample consists of only one timestep
+        samples= [x[0].data for x in data]
+
+        #Extracts the data from the sample
+        train_inputs=[]
+        for sample in samples:
+            train_inputs.append(utils.TrainInput(environment=sample[0],state=sample[1],value=sample[2],policy=sample[3]))
+        return train_inputs
+
+    def dataset(self):
+        return reverb.TimestepDataset(self.client,self.table)
+
+
+    def length(self):
+        return self.client.server_info()[self.table].current_size
+
+    def sample_by_fraction(self, p):
+        return self.sample_by_numbers(math.ceil(p*self.length()))
+
+    @property
+    def supports_dataset(self):
+        return False
+
+class Broadcaster(abc.ABC):
     @abc.abstractmethod
     def broadcast(self, path):
         pass
 
 
-class QueuesModelBroadcaster(ModelBroadcaster):
+class ProcessesBroadcaster(Broadcaster):
 
     def __init__(self, processes: List[spawn.Process]):
         self.processes = processes
@@ -209,6 +320,11 @@ class QueuesModelBroadcaster(ModelBroadcaster):
     def broadcast(self, path):
         for process in self.processes:
             process.queue.put(path)
+        pass
+
+    def request_exit(self):
+        for process in self.processes:
+            process.queue.put("")
         pass
 
 

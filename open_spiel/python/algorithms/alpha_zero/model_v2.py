@@ -1,7 +1,7 @@
 import collections
 import os
 from functools import cached_property, cache
-from typing import Sequence
+from typing import Sequence, Union
 
 import numpy as np
 import tensorflow as tf
@@ -53,7 +53,7 @@ class UpdateIterationCallback(tf.keras.callbacks.Callback):
 
 
 class TrainInput(collections.namedtuple(
-    "TrainInput", "observation legals_mask policy value")):
+    "TrainInput", "observation legals_mask value policy")):
     """Inputs for training the Model."""
 
     @staticmethod
@@ -208,22 +208,32 @@ class ModelV2:
         """
         self.model.save(path)
 
-    def update(self, train_inputs: Sequence[TrainInput]):
+    def update(self, train_inputs: Union[Sequence[TrainInput],tf.data.Dataset]):
         """Runs a training step."""
-        batch = self._get_batch(train_inputs)
-        #        print(batch.observation.shape)
         iteration=self.update_iteration
-        self.update_iteration+=1
+        callbacks = [
+            L2LossHistoryCallback(self.model, self.regularization),
+            UpdateIterationCallback(iteration),
+            keras.callbacks.CSVLogger(os.path.join(self.config.path, "log.csv"), append=True)
+        ]
+        if type(train_inputs) is tf.data.Dataset:
+            log = self.model.fit(train_inputs.batch(self.config.train_batch_size), epochs=self.config.epochs_per_iteration, verbose=1, callbacks=callbacks,
+                                 steps_per_epoch=self.config.steps_per_epoch)
+        else:
 
-        # Run a training step and get the losses.
-        x = self._get_input(batch)
-        y = self._get_output(batch)
-        log = self.model.fit(x, y, batch_size=self.config.train_batch_size, epochs=3, verbose=1,
-                             callbacks=[
-                                 L2LossHistoryCallback(self.model, self.regularization),
-                                 UpdateIterationCallback(iteration),
-                                 keras.callbacks.CSVLogger(os.path.join(self.config.path,"log.csv"), append=True)
-                             ])
+            batch = self._get_batch(train_inputs)
+            #        print(batch.observation.shape)
+            self.update_iteration+=1
+
+            # Run a training step and get the losses.
+            x = self._get_input(batch)
+            y = self._get_output(batch)
+            print(x["environment"].shape)
+            print(x["state"].shape)
+            print(y["policy_targets"].shape)
+            print(y["value_targets"].shape)
+            log = self.model.fit(x, y, batch_size=self.config.train_batch_size, epochs=self.config.epochs_per_iteration, verbose=1,
+                                 callbacks=callbacks)
         return Losses(np.mean(log.history["policy_targets_loss"]), np.mean(log.history["value_targets_loss"]),
                       np.mean(log.history["l2_loss"]))
 

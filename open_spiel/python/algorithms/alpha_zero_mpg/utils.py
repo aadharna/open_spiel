@@ -2,11 +2,10 @@ import abc
 import collections
 import functools
 import traceback
-from typing import Iterable
+from typing import Iterable, List
 
 import numpy as np
-from open_spiel.python.utils import file_logger
-from open_spiel.python.algorithms.alpha_zero_mpg.model import nested_reshape
+from open_spiel.python.utils import file_logger, spawn
 import open_spiel.python.algorithms.mcts as mcts
 import random
 
@@ -79,6 +78,7 @@ class Watched(abc.ABC):
         pass
 
 
+
 # TODO: Add mean payoffs to the trajectory
 class TrajectoryState(object):
     """A particular point along a trajectory."""
@@ -136,14 +136,12 @@ class Config(collections.namedtuple(
         "evaluators",
         "evaluation_window",
         "eval_levels",
-
         "uct_c",
         "max_simulations",
         "policy_alpha",
         "policy_epsilon",
         "temperature",
         "temperature_drop",
-
         "nn_model",
         "nn_width",
         "nn_depth",
@@ -152,7 +150,14 @@ class Config(collections.namedtuple(
         "verbose",
         "quiet",
         "fix_environment",
-        "version"
+        "version",
+        "grpc",
+        "grpc_address",
+        "grpc_port",
+        "grpc_table",
+        "grpc_min_size",
+        "steps_per_epoch",
+        "epochs_per_iteration",
     ])):
   """A config for the model/experiment."""
   @property
@@ -249,3 +254,34 @@ class AlmostUniversalHasher:
     @classmethod
     def deterministic_instance(cls):
         return cls(x=2654435761,mod=18446744073709551557)
+def nested_reshape(flat_array, shapes_list):
+    arrays=[]
+    start=0
+    for shape in shapes_list:
+        size=np.prod(shape)
+        arrays.append(np.reshape(flat_array[start:start+size],shape))
+        start+=size
+    if start!=len(flat_array):
+        raise ValueError("Shapes don't match")
+    return arrays
+
+class TrainInput(collections.namedtuple(
+    "TrainInput", ["environment", "state", "value", "policy"])):
+    """Inputs for training the Model."""
+
+    @staticmethod
+    def stack(train_inputs):
+        environment= np.stack([t.environment for t in train_inputs])
+        state= np.stack([t.state for t in train_inputs])
+        value= np.stack([t.value for t in train_inputs])
+        policy= np.stack([t.policy for t in train_inputs])
+        return TrainInput(
+            environment=np.array(environment, dtype=np.float32),
+            state=np.array(state, dtype=np.int32),
+            value=np.expand_dims(value, 1),
+            policy=np.array(policy),
+        )
+
+INPUT_NAMES=("environment","state")
+OUTPUT_NAMES=("value","policy")
+TRAIN_NAMES=("environment","state","value","policy")
