@@ -1,0 +1,42 @@
+#Configuration file for Alpha Zero on Mean Payoff Games
+
+quiet = false #Whether suppress all console output
+verbose = false #Whether to print detailed logs to the console
+[game]
+    name = "mpg" #Name of the game
+[game.params]
+    max_moves = 100 #Maximum number of moves in a game
+    max_size = 10 #Maximum size of the game
+    generator = "gnp"
+    generator_params = [10, 0.5, -1, 1]
+
+[model]
+    name = "mean_payoff" #Name of the model
+    architecture = "gnn" #Architecture of the model
+    width = 3 #Width of the model
+    depth = 3 #Depth of the model
+    path = "" #Path to the model. Leave empty for a randomly generated path
+
+[training]
+    training_batch_size = 64
+    learning_rate = 0.001
+    weight_decay = 0.0001
+    checkpoint_freq = 100 # Should be renamed to checkpoint_interval
+    max_steps = 100000
+
+[replay_buffer]
+    buffer_size = 65000
+    reuse = 32
+
+[services]
+    actors = 1
+    evaluators = 1
+    evaluation_interval = 100
+    evaluation_levels = 7
+
+[mcts]
+    uct_c = 2
+    policy_epsilon = 0.25
+    policy_alpha = 1
+    temperature = 1
+    temperature_drop = 10

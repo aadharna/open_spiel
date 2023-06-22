@@ -20,6 +20,7 @@ from absl import flags
 from open_spiel.python.algorithms.alpha_zero import alpha_zero_v2 as alpha_zero
 from open_spiel.python.algorithms.alpha_zero import model_v2 as model_lib
 from open_spiel.python.utils import spawn
+import yaml
 
 flags.DEFINE_string("game", "connect_four", "Name of the game.")
 flags.DEFINE_integer("uct_c", 2, "UCT's exploration constant.")
@@ -62,39 +63,39 @@ FLAGS = flags.FLAGS
 
 
 def main(unused_argv):
-  config = alpha_zero.Config(
-      game=FLAGS.game,
-      path=FLAGS.path,
-      learning_rate=FLAGS.learning_rate,
-      weight_decay=FLAGS.weight_decay,
-      train_batch_size=FLAGS.train_batch_size,
-      replay_buffer_size=FLAGS.replay_buffer_size,
-      replay_buffer_reuse=FLAGS.replay_buffer_reuse,
-      max_steps=FLAGS.max_steps,
-      checkpoint_freq=FLAGS.checkpoint_freq,
-      regularization=FLAGS.regularization,
-      actors=FLAGS.actors,
-      evaluators=FLAGS.evaluators,
-      uct_c=FLAGS.uct_c,
-      max_simulations=FLAGS.max_simulations,
-      policy_alpha=FLAGS.policy_alpha,
-      policy_epsilon=FLAGS.policy_epsilon,
-      temperature=FLAGS.temperature,
-      temperature_drop=FLAGS.temperature_drop,
-      evaluation_window=FLAGS.evaluation_window,
-      eval_levels=FLAGS.eval_levels,
+    config = alpha_zero.Config(
+        game=FLAGS.game,
+        path=FLAGS.path,
+        learning_rate=FLAGS.learning_rate,
+        weight_decay=FLAGS.weight_decay,
+        train_batch_size=FLAGS.train_batch_size,
+        replay_buffer_size=FLAGS.replay_buffer_size,
+        replay_buffer_reuse=FLAGS.replay_buffer_reuse,
+        max_steps=FLAGS.max_steps,
+        checkpoint_freq=FLAGS.checkpoint_freq,
+        regularization=FLAGS.regularization,
+        actors=FLAGS.actors,
+        evaluators=FLAGS.evaluators,
+        uct_c=FLAGS.uct_c,
+        max_simulations=FLAGS.max_simulations,
+        policy_alpha=FLAGS.policy_alpha,
+        policy_epsilon=FLAGS.policy_epsilon,
+        temperature=FLAGS.temperature,
+        temperature_drop=FLAGS.temperature_drop,
+        evaluation_window=FLAGS.evaluation_window,
+        eval_levels=FLAGS.eval_levels,
 
-      nn_model=FLAGS.nn_model,
-      nn_width=FLAGS.nn_width,
-      nn_depth=FLAGS.nn_depth,
-      observation_shape=None,
-      output_size=None,
+        nn_model=FLAGS.nn_model,
+        nn_width=FLAGS.nn_width,
+        nn_depth=FLAGS.nn_depth,
+        observation_shape=None,
+        output_size=None,
 
-      quiet=FLAGS.quiet,
-  )
-  alpha_zero.alpha_zero(config)
+        quiet=FLAGS.quiet,
+    )
+    alpha_zero.alpha_zero(config)
 
 
 if __name__ == "__main__":
-  with spawn.main_handler():
-    app.run(main)
+    with spawn.main_handler():
+        app.run(main)

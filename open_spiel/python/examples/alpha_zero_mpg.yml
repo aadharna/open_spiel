@@ -1,0 +1,73 @@
+#Configuration file for Alpha Zero on Mean Payoff Games
+
+quiet: null #Whether suppress all console output
+verbose: false #Whether to print detailed logs to the console
+specification: 2
+path: null
+
+game:
+    name: "mpg"
+    max_moves: 100
+    max_size: 100
+    generator:
+        name: "gnp"
+        params: [100, 0.33, -1, 1, 39]
+    fix_environment: false #Whether to fix the environment or not
+
+
+model: #Model configuration
+    name: "mean_payoff" #Name of the model
+    architecture: "gnn" #Architecture of the model
+    width: 3 #Width of the model
+    depth: 3 #Depth of the model
+
+training:
+    batch_size: 64
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    checkpoint_freq: 100 # Should be renamed to checkpoint_interval
+    max_steps: 100000 #Should be renamed to max_iterations
+    steps_per_epoch: 1000
+    epochs_per_iteration: 16
+    optimizer: "adam" #One of "adam", "sgd", "rmsprop"
+    path: null #Path to the model. Leave empty for a randomly generated path
+
+
+
+replay_buffer:
+    buffer_size: 65000
+    reuse: 32
+    implementation:
+        table: "mpg"
+        type: grpc #One of "local", "grpc"
+        address: localhost
+        port : 50051
+        sampler:
+            name: "random" # one of "random", "fifo", "lifo", "priority"
+            params: [] # Additional parameters for the sampler
+        remover:
+            name: "fifo" # one of "random" or "fifo", "lifo", "priority"
+            params: [] # Additional parameters for the remover
+        min_size: 1024 # minimum number of elements in the buffer before sampling
+
+services:
+    actors:
+        instances: 3
+        stats_basename: actors_stats # Base name of the file to store the statistics of the actors
+        # The file will be named as <stats_basename>.<instance_id>.json
+        stats_frequency: 100 # Frequency of the statistics collection in seconds
+    evaluators:
+        instances: 3
+        stats_basename: evaluators_stats # Base name of the file to store the statistics of the evaluators
+        # The file will be named as <stats_basename>.<instance_id>.json
+        stats_frequency: 100 # Frequency of the statistics collection in seconds
+        evaluation_window: 100
+        evaluation_levels: 7
+
+mcts:
+    uct_c: 2
+    policy_epsilon: 0.25
+    policy_alpha: 1
+    temperature: 1
+    temperature_drop: 10
+    max_simulations: 100
