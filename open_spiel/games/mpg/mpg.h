@@ -129,7 +129,7 @@ namespace open_spiel::mpg
         NodeType StateAt(NodeType cell) const { return cell; }
         Player outcome() const { return outcome_; }
 
-        [[nodiscard]] virtual int MaxNumMoves() const;
+        [[nodiscard]] virtual std::uint32_t MaxNumMoves() const;
 
         // Only used by Ultimate Tic-Tac-Toe.
         void SetCurrentPlayer(Player player) { current_player_ = player; }
@@ -143,13 +143,15 @@ namespace open_spiel::mpg
         std::vector<std::vector<int>> ObservationTensorsShapeList() const override;
 
     protected:
-
+      inline static constexpr class Clone_t{} Cloner{};
+      MPGEnvironmentState(const MPGEnvironmentState& other, Clone_t);
       void DoApplyAction(Action move) override;
       std::array<int,3> ObservationEnvironmentTensorShape() const;
         NodeType current_state = 0;
       WeightType mean_payoff = 0;
       std::vector<NodeType> state_history;
       std::shared_ptr<Environment> environment;
+      std::array<std::vector<std::uint32_t>,2> visits_per_player;
 
      private:
       Player current_player_ = 0;         // Player zero goes first

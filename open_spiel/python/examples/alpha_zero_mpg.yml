@@ -31,6 +31,7 @@ training:
     epochs_per_iteration: 16
     optimizer: "adam" #One of "adam", "sgd", "rmsprop"
     path: null #Path to the model. Leave empty for a randomly generated path
+    dataset_api: false # Whether to use the dataset API or not
 
 
 

@@ -138,7 +138,7 @@ class GrpcReplayBuffer(ReplayBufferAdapter):
         return train_inputs
 
     def dataset(self):
-        return reverb.TimestepDataset(self.client, self.table)
+        return reverb.TimestepDataset.from_table_signature(self.client, self.table)
 
     def length(self):
         return self.client.server_info()[self.table].current_size

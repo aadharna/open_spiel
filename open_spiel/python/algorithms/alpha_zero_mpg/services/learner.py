@@ -24,7 +24,7 @@ class Learner(utils.Watched):
         # for _ in range(len(replay_buffer) // config.train_batch_size):
         #  data = replay_buffer.sample(config.train_batch_size)
         #  losses.append(model.update(data))
-        if self.replay_buffer.supports_dataset:
+        if self.config.dataset_api:
             data = self.replay_buffer.dataset()
         else:
             data = self.replay_buffer.sample(64)
