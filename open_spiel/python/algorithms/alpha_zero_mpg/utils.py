@@ -1,13 +1,17 @@
 import abc
+import argparse
 import collections
+import datetime
 import functools
 import traceback
-from typing import Iterable, List
+from typing import Iterable, List, Union, Tuple
 
 import numpy as np
+import reverb
 from open_spiel.python.utils import file_logger, spawn
 import open_spiel.python.algorithms.mcts as mcts
 import random
+import tensorflow as tf
 
 def watcher(fn):
     """A decorator to fn/processes that gives a logger and logs exceptions."""
@@ -38,6 +42,88 @@ def watcher(fn):
 
     return _watcher
 
+
+def get_reverb_selector(name):
+    if name == "random" or name == "uniform":
+        return reverb.selectors.Uniform
+    elif name == "fifo":
+        return reverb.selectors.Fifo
+    elif name == "priority":
+        return reverb.selectors.Prioritized
+    elif name == "lifo":
+        return reverb.selectors.Lifo
+    else:
+        raise ValueError("Unknown selector: {}".format(name))
+
+
+def json_serializer(obj):
+    """JSON serializer for objects not serializable by default json code"""
+
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    raise TypeError("Type %s not serializable" % type(obj))
+
+
+
+def recursive_namespace_todict(ns):
+    """Converts a namespace object to a dictionary, recursively."""
+    d = {}
+    if isinstance(ns, argparse.Namespace):
+        ns = vars(ns)
+
+    if isinstance(ns, dict):
+        return {k: recursive_namespace_todict(v) for k, v in ns.items()}
+    elif isinstance(ns, list):
+        return [recursive_namespace_todict(v) for v in ns]
+    else:
+        return ns
+
+
+def reduce_lists(ns):
+    result = {}
+    if isinstance(ns, dict):
+        for k, v in ns.items():
+            r = reduce_lists(v)
+            result[k] = r
+        return result
+    if isinstance(ns, list):
+        mapper = map(str, ns)
+        return " ".join(mapper)
+    return ns
+
+
+def game_complete_name(game_config) -> Union[Tuple[str], Tuple[str, str]]:
+    game_dict = reduce_lists(recursive_namespace_todict(game_config))
+    if "generator" in game_dict:
+        game_dict["generator_params"] = game_dict["generator"]["params"]
+        game_dict["generator"] = game_config.generator.name
+    game_params = []
+    game_name = game_dict["name"]
+    game_dict.pop("name")
+    game_dict.pop("fix_environment")
+    if len(game_dict) == 0:
+        return (game_name,)
+    else:
+        return (game_name, game_dict)
+
+
+def expand_arguments(fn, *args, **kwargs):
+    if len(args) == 1:
+        args = args[0]
+    if isinstance(args, argparse.Namespace) or isinstance(args, dict):
+        args = vars(args)
+        return fn(**args, **kwargs)
+    elif isinstance(args, Iterable):
+        return fn(*args, **kwargs)
+    else:
+        return fn(args, **kwargs)
+
+
+def get_reverb_signature():
+    return [tf.TensorSpec(shape=(None, None, 2), dtype=tf.float32),
+                       tf.TensorSpec(shape=(1,), dtype=tf.float32),
+                       tf.TensorSpec(shape=(), dtype=tf.float32),
+                       tf.TensorSpec(shape=(None,), dtype=tf.float32)]
 
 class Watched(abc.ABC):
     def __init__(self, config, num=None, name=None, *, to_stdout=False):

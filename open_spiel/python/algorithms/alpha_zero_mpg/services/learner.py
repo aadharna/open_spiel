@@ -53,7 +53,7 @@ class Learner(utils.Watched):
         self.model_broadcaster.broadcast(save_path)
 
         data_log = data_logger.DataLoggerJsonLines(config.path, "learner", True)
-        evals = [Buffer(config.services.evaluation_window) for _ in range(config.services.evaluation_levels)]
+        evals = [Buffer(config.services.evaluators.evaluation_window) for _ in range(config.services.evaluators.evaluation_levels)]
         total_trajectories = 0
         last_total_trajectories = 0
 

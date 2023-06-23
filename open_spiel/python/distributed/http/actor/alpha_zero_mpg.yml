@@ -6,14 +6,13 @@ specification: 2
 path: null # Path to the working directory. Leave empty for a randomly generated path
 
 game:
-    name: "mpg"
-    max_moves: 100
-    max_size: 100
+    name: "mpg-20-sparse"
+    max_moves: 35
+    max_size: 20
     generator:
         name: "gnp"
-        params: [100, 0.33, -1, 1, 39]
+        params: [20, 0.1 -1, 1, 39]
     fix_environment: false #Whether to fix the environment or not
-
 
 model: #Model configuration
     name: "mean_payoff" #Name of the model
@@ -52,7 +51,17 @@ replay_buffer:
 
 services:
     actors:
-        instances: 3
+        instances:
+            - name: L1
+              game_id: 0
+            - name: L2
+              game:
+                  name: "mpg"
+                  max_moves: 100
+            - name: hard
+              game:
+                  name: "mpg"
+                  max_moves: 100
         stats_basename: actors_stats # Base name of the file to store the statistics of the actors
         # The file will be named as <stats_basename>.<instance_id>.json
         stats_frequency: 100 # Frequency of the statistics collection in seconds
@@ -74,3 +83,10 @@ mcts:
     temperature: 1
     temperature_drop: 10
     max_simulations: 100
+
+
+http:
+    port: 37215
+    discovery_file: null # Path to the discovery file. Leave empty for a randomly generated path
+    # The randomly generated path should be consistent across all the services
+    timeout: 100 # Timeout for the HTTP requests in seconds

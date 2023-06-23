@@ -4,6 +4,7 @@ import time
 from typing import List, Dict, TypedDict, Union
 
 import numpy as np
+from open_spiel.python.algorithms.alpha_zero_mpg.multiprocess.orchestrator import ProcessesTrajectoryCollector
 from open_spiel.python.utils import spawn, stats
 
 import open_spiel.python.algorithms.alpha_zero_mpg.utils
@@ -11,6 +12,7 @@ from . import utils, model as model_lib
 import random
 import reverb
 from .services import actor
+from .multiprocess import queue as queue_lib
 
 
 class ReplayBufferAdapter(abc.ABC):
@@ -37,8 +39,6 @@ class ReplayBufferAdapter(abc.ABC):
     @abc.abstractmethod
     def length(self) -> int:
         pass
-
-
 
     def update(self):
         pass
@@ -79,7 +79,7 @@ class QueuesReplayBuffer(ReplayBufferAdapter):
         self.current_analysis_data: Union[ProcessesTrajectoryCollector.CollectedMetadata, None] = None
 
     def update(self):
-        train_data,self.current_analysis_data = self.trajectory_collector.collect()
+        train_data, self.current_analysis_data = self.trajectory_collector.collect()
         self.replay_buffer.extend(train_data)
 
     @property
@@ -106,12 +106,13 @@ class QueuesReplayBuffer(ReplayBufferAdapter):
 
 
 class GrpcReplayBuffer(ReplayBufferAdapter):
-    def __init__(self,address:str,port:int,table:str):
+    def __init__(self, address: str, port: int, table: str):
         super().__init__()
-        self.address=address
-        self.port=port
-        self.table=table
-        self.client=reverb.Client(f"{self.address}:{self.port}")
+        self.address = address
+        self.port = port
+        self.table = table
+        self.client = reverb.Client(f"{self.address}:{self.port}")
+
     pass
 
     def update(self):
@@ -124,31 +125,31 @@ class GrpcReplayBuffer(ReplayBufferAdapter):
     def max_length(self):
         return self.client.server_info()[self.table].max_size
 
-
     def sample_by_numbers(self, n):
-        data= self.client.sample(self.table,n)
-        #Each sample consists of only one timestep
-        samples= [x[0].data for x in data]
+        data = self.client.sample(self.table, n)
+        # Each sample consists of only one timestep
+        samples = [x[0].data for x in data]
 
-        #Extracts the data from the sample
-        train_inputs=[]
+        # Extracts the data from the sample
+        train_inputs = []
         for sample in samples:
-            train_inputs.append(utils.TrainInput(environment=sample[0],state=sample[1],value=sample[2],policy=sample[3]))
+            train_inputs.append(
+                utils.TrainInput(environment=sample[0], state=sample[1], value=sample[2], policy=sample[3]))
         return train_inputs
 
     def dataset(self):
-        return reverb.TimestepDataset(self.client,self.table)
-
+        return reverb.TimestepDataset(self.client, self.table)
 
     def length(self):
         return self.client.server_info()[self.table].current_size
 
     def sample_by_fraction(self, p):
-        return self.sample_by_numbers(math.ceil(p*self.length()))
+        return self.sample_by_numbers(math.ceil(p * self.length()))
 
     @property
     def supports_dataset(self):
         return False
+
 
 class Broadcaster(abc.ABC):
     @abc.abstractmethod
@@ -163,12 +164,17 @@ class ProcessesBroadcaster(Broadcaster):
 
     def broadcast(self, path):
         for process in self.processes:
-            process.queue.put(path)
+            process.queue.put(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_MESSAGE, path))
         pass
 
     def request_exit(self):
         for process in self.processes:
-            process.queue.put("")
+            process.queue.put(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_CLOSE, None))
+
+        for process in self.processes:
+            while not process.queue.empty():
+                process.queue.get_nowait()
+            process.join()
         pass
 
 

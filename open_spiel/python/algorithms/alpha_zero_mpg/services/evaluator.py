@@ -44,7 +44,7 @@ class MultiProcEvaluator(Evaluator):
     def __init__(self, config, num=None, opponent="mcts", name=None):
         super().__init__(config, num, name)
         self.opponent = opponent
-        self.time_resolution = config.services.actor_time_resolution or config.time_resolution or 60
+        self.stats_frequency = config.services.evaluators.stats_frequency or config.stats_frequency or 60
         self._stats = None
 
         pass
@@ -79,7 +79,7 @@ class MultiProcEvaluator(Evaluator):
             if self._stats["counter"] is None:
                 self._stats["counter"] = game_num
 
-            if (self._stats["end_time"] - self._stats["start_time"]).seconds > self.time_resolution:
+            if (self._stats["end_time"] - self._stats["start_time"]).seconds > self.stats_frequency:
                 queue.put(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_ANALYSIS, self.stats))
                 self._reset_stats()
 
@@ -88,7 +88,7 @@ class MultiProcEvaluator(Evaluator):
                 try:
                     message_type, message = queue.get_nowait()
                     if message_type == queue_lib.MessageTypes.QUEUE_MESSAGE:
-                        pass
+                        path= message
                     elif message_type == queue_lib.MessageTypes.QUEUE_HEARTBEAT:
                         queue.put(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_HEARTBEAT, None))
                     elif message_type == queue_lib.MessageTypes.QUEUE_ANALYSIS:
@@ -108,7 +108,7 @@ class MultiProcEvaluator(Evaluator):
             # Alternate between playing as player Max and player Min.
             az_player = game_num % 2
             # Each difficulty is repeated twice, once per player. Hence, the Euclidean division by 2.
-            difficulty = (game_num // 2) % config.services.evaluation_levels
+            difficulty = (game_num // 2) % config.services.evaluators.evaluation_levels
             max_simulations = int(config.max_simulations * (10 ** (difficulty / 2)))
 
             az_bot = bots_lib.init_bot(config=config.mcts, game=game, evaluator_=az_evaluator, evaluation=True,
@@ -155,7 +155,7 @@ class MultiProcEvaluator(Evaluator):
 
             # Update stats
             game_stats["winner"] = self._sign(trajectory.returns[0])
-            game_stats["num_steps"] = len(trajectory.actions)
+            game_stats["num_steps"] = len(trajectory.states)
             self._stats["games"].append(EvaluationGameStats(**game_stats))
             self._stats["num_games"] += 1
 

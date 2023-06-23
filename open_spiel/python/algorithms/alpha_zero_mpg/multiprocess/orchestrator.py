@@ -10,6 +10,7 @@ import reverb
 from open_spiel.python.utils import spawn, stats
 from .. import utils
 from . import queue as queue_lib
+import os
 
 
 class TrajectoryCollector(abc.ABC):
@@ -173,12 +174,19 @@ class PeriodicThread(threading.Thread):
 
 class ActorsGrpcOrchestrator(ProcessOrchestrator):
 
-    def __init__(self, actors: List[spawn.Process], server_address: str, server_port: int, table: str,*,
-                 server_max_workers: int,
-                 max_buffer_size: int, max_game_length, request_length=1024, server_timeout: int = 30,
-                 max_collection_time: int = None, stats_frequency: int = 60, stats_file: str = None,
-                 collection_period: float = None):
+    def __init__(self, actors: List[spawn.Process], config, max_game_length:int):
         super().__init__(actors)
+        server_address=config.replay_buffer.implementation.address
+        server_port=config.replay_buffer.implementation.port
+        table=config.replay_buffer.implementation.table
+        server_max_workers= 10
+        server_timeout= 10
+        max_buffer_size= config.replay_buffer.buffer_size
+        request_length= config.services.actors.request_length
+        max_collection_time= config.services.actors.max_collection_time
+        stats_frequency= config.services.actors.stats_frequency
+        stats_file= config.services.actors.stats_basename
+        collection_period= config.services.actors.collection_period
         self.collector = ProcessesTrajectoryCollector(actors, max_game_length=max_game_length,
                                                       learn_rate=request_length, block_until_ready=False)
         self.server_address = server_address
@@ -193,13 +201,15 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
         self.stats_frequency = stats_frequency
         if stats_file is None:
             stats_file = "actor"
-        self.stats_file = f"{stats_file}_{socket.gethostname()}.json"
+        self.stats_file = os.path.join(config.path,f"{stats_file}_{socket.gethostname()}.json")
         self.stats_save_thread = PeriodicThread(self.stats_frequency, self.save_stats)
         self.stats_save_thread.start()
+        self.request_length = request_length
         if collection_period is not None:
             self.collection_thread = PeriodicThread(collection_period, self.collect)
             self.collection_thread.start()
-        pass
+        else:
+            self.collection_thread = None
 
     def _time_to_stop(self, start_time):
         if self.max_collection_time is None:
@@ -208,7 +218,7 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
 
     def save_stats(self):
         with open(self.stats_file, "a") as file:
-            json.dump(self.collector.stats, file)
+            json.dump(self.collector.stats, file, default=utils.json_serializer)
             # Add a comma to separate the json objects
             file.write(",\n")
 
@@ -217,12 +227,13 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
         if self.max_collection_time is not None:
             start_time = time.time()
         while not self._stop_request and not self._time_to_stop(start_time):
+            print("Collecting trajectories")
             train_inputs, metadata = self.collector.collect()
             batch_size=len(train_inputs)
             #This guarantees that the inputs does not exceed the max buffer size
-            for index in range((batch_size + self.max_buffer_size - 1) // self.max_buffer_size):
-                with self.client.writer(self.max_buffer_size) as writer:
-                    for train_input in train_inputs[index * self.max_buffer_size:(index + 1) * self.max_buffer_size]:
+            for index in range((batch_size + self.request_length - 1) // self.request_length):
+                with self.client.writer(self.request_length) as writer:
+                    for train_input in train_inputs[index * self.request_length:(index + 1) * self.request_length]:
                         # The order of the keys is important
                         # It appears that the ordering of reverb is not consistent for dictionaries
                         # This is why we use a list
@@ -239,34 +250,44 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
 
     def stop(self):
         self._stop_request = True
+        if self.collection_thread is not None:
+            self.collection_thread.stop()
+        self.stats_save_thread.stop()
         pass
 
 
 class EvaluatorOrchestrator(ProcessOrchestrator):
-    def __init__(self, evaluators: List[spawn.Process], max_game_length: int, max_collection_time: int = None,
-                 stats_frequency: int = 60, stats_file: str = None):
+    def __init__(self, evaluators: List[spawn.Process],config, max_game_length: int):
         super().__init__(evaluators)
+        max_collection_time = config.services.evaluators.max_collection_time
+        stats_frequency = config.services.evaluators.stats_frequency
+        stats_file = config.services.evaluators.stats_basename
+
         self.collector = ProcessesTrajectoryCollector(evaluators, max_game_length=max_game_length, learn_rate=1,
                                                       block_until_ready=False)
+        self.config=config
         self._stop_request = False
         self.max_collection_time = max_collection_time
         self.stats_frequency = stats_frequency
         if stats_file is None:
             stats_file = "evaluator"
-        self.stats_file = f"{stats_file}_{socket.gethostname()}.json"
+        self.stats_file = os.path.join(config.path,f"{stats_file}_{socket.gethostname()}.json")
+        self.stats_save_thread = PeriodicThread(self.stats_frequency, self.save_stats)
 
     def _time_to_stop(self, start_time):
         if self.max_collection_time is None:
             return False
         return time.time() - start_time > self.max_collection_time
 
-    @property
-    def metadata(self):
-        return 0
+    def save_stats(self):
+        with open(self.stats_file, "a") as file:
+            json.dump(self.collector.stats, file, default=utils.json_serializer)
+            # Add a comma to separate the json objects
+            file.write(",\n")
 
     def collect(self):
         start_time = None
-        if self.max_collection_time is not None:
+        while not self._stop_request and not self._time_to_stop(start_time):
             start_time = time.time()
             _, metadata = self.collector.collect()
             time.sleep(self.stats_frequency)

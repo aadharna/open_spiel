@@ -42,7 +42,7 @@ class MultiProcActor(Actor):
     def __init__(self, config, num=None, name=None):
         super().__init__(config, num, name)
         # Time resolution in seconds for updating the actor's state.
-        self.time_resolution = config.services.actor_time_resolution or config.time_resolution or 60
+        self.stats_frequency = config.services.actors.stats_frequency or config.stats_frequency or 60
         self._stats = None
         pass
 
@@ -82,7 +82,7 @@ class MultiProcActor(Actor):
                 self._stats["counter"] = game_num
 
             self._stats["end_time"] = datetime.datetime.now()
-            if (self._stats["end_time"] - self._stats["start_time"]).seconds > self.time_resolution:
+            if (self._stats["end_time"] - self._stats["start_time"]).seconds > self.stats_frequency:
                 queue.put(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_ANALYSIS, self.stats))
                 self._reset_stats()
 
@@ -91,7 +91,7 @@ class MultiProcActor(Actor):
                 try:
                     message_type, message = queue.get_nowait()
                     if message_type == queue_lib.MessageTypes.QUEUE_MESSAGE:
-                        pass
+                        path=message
                     elif message_type == queue_lib.MessageTypes.QUEUE_HEARTBEAT:
                         queue.put(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_HEARTBEAT, None))
                     elif message_type == queue_lib.MessageTypes.QUEUE_ANALYSIS:

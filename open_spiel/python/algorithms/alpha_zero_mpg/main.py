@@ -6,7 +6,9 @@ import threading
 import os
 import sys
 import tempfile
-from typing import Union, Tuple,Iterable
+from typing import Union, Tuple, Iterable
+
+from . import utils
 
 import tensorflow as tf
 
@@ -14,6 +16,7 @@ import pyspiel
 from open_spiel.python.utils import spawn
 
 from open_spiel.python.algorithms.alpha_zero_mpg import dto
+from open_spiel.python.algorithms.alpha_zero_mpg.multiprocess import orchestrator
 
 JOIN_WAIT_DELAY = 0.001
 
@@ -48,74 +51,22 @@ def create_local_actor(*, game, config, queue, num):
     return act.start(queue=queue, game=game)
 
 
-def recursive_namespace_todict(ns):
-    """Converts a namespace object to a dictionary, recursively."""
-    d = {}
-    if isinstance(ns, argparse.Namespace):
-        ns=vars(ns)
 
-    if isinstance(ns, dict):
-        return {k: recursive_namespace_todict(v) for k, v in ns.items()}
-    elif isinstance(ns, list):
-        return [recursive_namespace_todict(v) for v in ns]
-    else:
-        return ns
+EXIT_FUNCTIONS = []
 
 
-def reduce_lists(ns):
-    result={}
-    if isinstance(ns,dict):
-        for k,v in ns.items():
-            r=reduce_lists(v)
-            result[k]=r
-        return result
-    if isinstance(ns, list):
-        mapper=map(str,ns)
-        return " ".join(mapper)
-    return ns
+def register_exit_function(fn, *args, **kwargs):
+    EXIT_FUNCTIONS.append((fn, args, kwargs))
 
 
-def game_complete_name(game_config) -> Union[Tuple[str], Tuple[str, str]]:
-    game_dict = reduce_lists(recursive_namespace_todict(game_config))
-    if "generator" in game_dict:
-        game_dict["generator_params"]=game_dict["generator"]["params"]
-        game_dict["generator"]=game_config.generator.name
-    game_params=[]
-    game_name=game_dict["name"]
-    game_dict.pop("name")
-    game_dict.pop("fix_environment")
-    if len(game_dict) == 0:
-        return (game_name,)
-    else:
-        return (game_name, game_dict)
+def exit_functions():
+    for fn, args, kwargs in EXIT_FUNCTIONS:
+        fn(*args, **kwargs)
 
-def get_selector(name):
-    if name == "random" or name == "uniform":
-        return reverb.selectors.Uniform
-    elif name == "fifo":
-        return reverb.selectors.Fifo
-    elif name == "priority":
-        return reverb.selectors.Prioritized
-    elif name == "lifo":
-        return reverb.selectors.Lifo
-    else:
-        raise ValueError("Unknown selector: {}".format(name))
-
-
-def expand_arguments(fn,*args,**kwargs):
-    if len(args) == 1:
-        args=args[0]
-    if isinstance(args,argparse.Namespace) or isinstance(args,dict):
-        args=vars(args)
-        return fn(**args, **kwargs)
-    elif isinstance(args,Iterable):
-        return fn(*args, **kwargs)
-    else:
-        return  fn(args, **kwargs)
 
 def alpha_zero(config: Config):
     """Start all the worker processes for a full alphazero setup."""
-    complete_game = game_complete_name(config.game)
+    complete_game = utils.game_complete_name(config.game)
     game = pyspiel.load_game(*complete_game)
     if game.observation_tensor_shape_specs() == pyspiel.TensorShapeSpecs.VECTOR:
         shape = game.observation_tensor_shape()
@@ -126,7 +77,7 @@ def alpha_zero(config: Config):
 
     print("Starting game", complete_game)
     if game.num_players() != 2:
-        sys.exit("AlphaZero can only handle 2-player games.")
+        sys.exit("AlphaZero can on²ly handle 2-player games.")
     game_type = game.get_type()
     if game_type.reward_model != pyspiel.GameType.RewardModel.TERMINAL:
         raise ValueError("Game must have terminal rewards.")
@@ -154,53 +105,48 @@ def alpha_zero(config: Config):
                                       config.nn_depth))
 
     with open(os.path.join(config.path, "config.json"), "w") as fp:
-        config_json=recursive_namespace_todict(config)
+        config_json = utils.recursive_namespace_todict(config)
         fp.write(json.dumps(config_json, indent=2, sort_keys=True) + "\n")
 
     actor_factory = LocalActorFactory(config)
     evaluator_factory = LocalEvaluatorFactory(config)
-    if isinstance(config.services.actors, int):
+    if isinstance(config.services.actors.instances, int):
         actors = [spawn.Process(actor_factory, kwargs={"game": game, "config": config,
                                                        "num": i})
-                  for i in range(config.services.actors)
-        ]
+                  for i in range(config.services.actors.instances)
+                  ]
     else:
         raise ValueError("As of now, only int is supported for actors")
 
-    if isinstance(config.services.evaluators, int):
+    if isinstance(config.services.evaluators.instances, int):
         evaluators = [spawn.Process(evaluator_factory, kwargs={"game": game, "config": config,
                                                                "num": i, "opponent": "random"})
-                      for i in range(config.services.evaluators)]
+                      for i in range(config.services.evaluators.instances)]
     else:
-        raise ValueError("As of now, only int is supported for actors")
+        raise ValueError("As of now, only int is supported for evaluators")
+
     try:
         model_broadcaster = dto.ProcessesBroadcaster(actors + evaluators)
-
         if config.replay_buffer.implementation.type == "grpc":
             table = reverb.Table(
                 name=config.replay_buffer.implementation.table,
-                sampler=expand_arguments(get_selector(config.replay_buffer.implementation.sampler.name)),
-                remover=expand_arguments(get_selector(config.replay_buffer.implementation.remover.name)),
+                sampler=utils.expand_arguments(utils.get_reverb_selector(config.replay_buffer.implementation.sampler.name)),
+                remover=utils.expand_arguments(utils.get_reverb_selector(config.replay_buffer.implementation.remover.name)),
                 max_size=config.replay_buffer.buffer_size,
                 rate_limiter=reverb.rate_limiters.MinSize(config.replay_buffer.implementation.min_size),
-                signature=[tf.TensorSpec(shape=(None, None, 2), dtype=tf.float32),
-                           tf.TensorSpec(shape=(1,), dtype=tf.float32),
-                           tf.TensorSpec(shape=(), dtype=tf.float32),
-                           tf.TensorSpec(shape=(None,), dtype=tf.float32)]
+                signature=utils.get_reverb_signature()
             )
             reverb_server = reverb.Server(tables=[table], port=config.replay_buffer.implementation.port)
-            replay_buffer = dto.GrpcReplayBuffer(address=config.replay_buffer.implementation.address, port=config.replay_buffer.implementation.port,
+            replay_buffer = dto.GrpcReplayBuffer(address=config.replay_buffer.implementation.address,
+                                                 port=config.replay_buffer.implementation.port,
                                                  table=config.replay_buffer.implementation.table)
-            actors_orchestrator = dto.ActorsGrpcOrchestrator(actors, server_address=config.replay_buffer.implementation.address,
-                                                             server_port=config.replay_buffer.implementation.port, table=config.replay_buffer.implementation.table,
-                                                             server_max_workers=10,
-                                                             max_buffer_size=config.replay_buffer.buffer_size,
-                                                             max_game_length=game.max_game_length(),
-                                                             request_length=64)
+            actors_orchestrator = orchestrator.ActorsGrpcOrchestrator(actors, config=config,
+                                                                      max_game_length=game.max_game_length())
+            # evaluator_orchestrator = orchestrator.EvaluatorOrchestrator(evaluators)
+            register_exit_function(reverb_server.stop)
+            register_exit_function(actors_orchestrator.stop)
+            register_exit_function(model_broadcaster.request_exit)
 
-            thread = threading.Thread(target=dto.ActorsGrpcOrchestrator.collect, args=(actors_orchestrator,),
-                                      daemon=True)
-            thread.start()
 
         elif config.reverb_buffer.implementation.type == "queues":
             replay_buffer = dto.QueuesReplayBuffer(config.replay_buffer_size, config.replay_buffer_reuse,
@@ -212,8 +158,9 @@ def alpha_zero(config: Config):
     except (KeyboardInterrupt, EOFError):
         print("Caught a KeyboardInterrupt, stopping early.")
     finally:
-        process_broadcaster = dto.ProcessesBroadcaster(actors + evaluators)
-        process_broadcaster.request_exit()
+        print("Stopping actors and evaluators")
+        exit_functions()
+
         # for actor processes to join we have to make sure that their q_in is empty,
         # including backed up items
         # for proc in actors:

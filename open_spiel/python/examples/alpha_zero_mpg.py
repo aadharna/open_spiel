@@ -44,6 +44,7 @@ def nested_dict_to_namespace(nested_dict):
             namespace[i]=nested_dict_to_namespace(value)
     return namespace
 
+# TODO: invert the direction of the conversion
 def compatibility_mode(config):
     config.fix_environment = config.game.fix_environment
     config.temperature = config.mcts.temperature
@@ -63,7 +64,7 @@ def compatibility_mode(config):
     config.max_steps = config.training.max_steps
     config.steps_per_epoch = config.training.steps_per_epoch
     config.epochs_per_iteration = config.training.epochs_per_iteration
-    config.evaluation_window = config.services.evaluation_window
+    config.evaluation_window = config.services.evaluators.evaluation_window
     config.regularization = config.training.weight_decay
     config.policy_epsilon = config.mcts.policy_epsilon
     config.policy_alpha = config.mcts.policy_alpha

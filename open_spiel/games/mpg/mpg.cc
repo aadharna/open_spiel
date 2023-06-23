@@ -24,10 +24,11 @@
 #include "open_spiel/utils/tensor_view.h"
 #include "mpg_generator.h"
 #include "string_compress.h"
+#include "generator/environment.h"
 
 namespace open_spiel::mpg {
     //std::unique_ptr<MetaFactory> metaFactory = std::make_unique<ExampleFactory>();
-    std::unique_ptr<MetaFactory> metaFactory = std::make_unique<ParserMetaFactory>();
+    std::unique_ptr<ParserMetaFactory> parserMetaFactory = std::make_unique<ParserMetaFactory>();
 
     namespace
     {
@@ -58,7 +59,7 @@ namespace open_spiel::mpg {
 
         std::shared_ptr<const Game> Factory(const GameParameters& params)
         {
-            auto game=metaFactory->CreateGame(params);
+            auto game=parserMetaFactory->CreateGame(params);
             game->NewInitialEnvironmentState();
             return game;
         }

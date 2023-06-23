@@ -7,19 +7,31 @@ import open_spiel.python.algorithms.alpha_zero_mpg.dto as mpg_dto
 import yaml
 import argparse
 import os
+from .. import common
 
 
-class ActorApp(fastapi.FastAPI):
+class HttpActorFactory:
+    def __init__(self, specs):
+        self.specs = specs
+        pass
+
+    def __call__(self, config, game, queue, num):
+        act = actor.MultiProcActor(config, num, name="actor")
+        return act.start(queue=queue, game=game)
+
+
+class ActorApp(common.AlphaZeroService):
+
     def __init__(self):
         super().__init__()
-        self.config = None
-        argv = sys.argv[1:]
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--config", type=str, default="config.yaml")
-        args, _ = parser.parse_known_args(argv)
-        if os.path.exists(args.config):
-            with open(args.config, "r") as f:
-                self.config = yaml.safe_load(f)
+        if isinstance(config.services.actors.instances, int):
+            actors = [spawn.Process(actor_factory, kwargs={"game": game, "config": config,
+                                                           "num": i})
+                      for i in range(config.services.actors.instances)
+                      ]
+        else:
+            raise ValueError("As of now, only int is supported for actors")
+    pass
 
 
 app = ActorApp()
@@ -31,7 +43,25 @@ def get_config():
 
 @app.post("/start")
 def start(config,name: Union[str,None]=None, num: Union[int,None]=None):
-    try:
-        app.actor = actor.MultiProcActor(config, num=num, name=name)
-    except:
-        
+    app.actor = actor.MultiProcActor(config, num=num, name=name)
+
+@app.get("/stop")
+def stop():
+    raise NotImplementedError()
+
+@app.get("/health")
+def health():
+    return True
+
+@app.get("/stats")
+def stats():
+    return NotImplementedError()
+
+@app.get("/update")
+def update():
+    return NotImplementedError()
+
+
+@app.get("/discovery")
+def discovery():
+    return NotImplementedError()
