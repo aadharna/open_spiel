@@ -102,7 +102,7 @@ namespace open_spiel::algorithms::mpg
     {
 
         // Game must have a nested observation tensor shape
-        if(game.ObservationTensorShapeSpecs() != Game::TensorShapeSpecs::kNestedList)
+        if(game.ObservationTensorShapeSpecs() != TensorShapeSpecs::kNestedList)
             SpielFatalError("ObservationTensorShapeSpecs must be kNestedList for PPVPNetModel");
         auto nested_shape= game.ObservationTensorsShapeList();
         // The firs dimension is the maximum graph size
@@ -132,7 +132,7 @@ namespace open_spiel::algorithms::mpg
     {
 
         // Game must have a nested observation tensor shape
-        if(game.ObservationTensorShapeSpecs() != Game::TensorShapeSpecs::kNestedList)
+        if(game.ObservationTensorShapeSpecs() != TensorShapeSpecs::kNestedList)
             SpielFatalError("ObservationTensorShapeSpecs must be kNestedList for PPVPNetModel");
         auto nested_shape= game.ObservationTensorsShapeList();
         // The firs dimension is the maximum graph size

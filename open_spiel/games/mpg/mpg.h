@@ -91,6 +91,8 @@ namespace open_spiel::mpg
         NodeType starting_state{};
         Environment()= default;
         Environment(WeightedGraphType graph, NodeType starting_state);
+
+        [[nodiscard]] int GraphSize() const;
     };
 
     using AdjacencyPayoffsType = std::map<NodeType,WeightType> ;
@@ -135,10 +137,16 @@ namespace open_spiel::mpg
         WeightType GetMeanPayoff() const;
 
         AdjacencyPayoffsType LegalActionsWithPayoffs() const;
-     protected:
+
+        [[nodiscard]] int GraphSize() const;
+
+        std::vector<std::vector<int>> ObservationTensorsShapeList() const override;
+
+    protected:
 
       void DoApplyAction(Action move) override;
-      NodeType current_state = 0;
+      std::array<int,3> ObservationEnvironmentTensorShape() const;
+        NodeType current_state = 0;
       WeightType mean_payoff = 0;
       std::vector<NodeType> state_history;
       std::shared_ptr<Environment> environment;
@@ -166,7 +174,7 @@ namespace open_spiel::mpg
           throw std::runtime_error("Not implemented");
       }
 
-      Game::TensorShapeSpecs ObservationTensorShapeSpecs() const override;
+      TensorShapeSpecs ObservationTensorShapeSpecs() const override;
 
       std::vector<std::vector<int>> ObservationTensorsShapeList() const override
       {

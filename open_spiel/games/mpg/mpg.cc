@@ -52,7 +52,8 @@ namespace open_spiel::mpg {
                                          {"max_size",GameParameter(GameParameter::Type::kInt,true)},
                                          {"generator_params", GameParameter(GameParameter::Type::kString,false)},
                                          {"specs_file",GameParameter(GameParameter::Type::kString,false)},
-                                         {"representation",GameParameter(GameParameter::Type::kString)}}  // no parameters
+                                         {"representation",GameParameter(GameParameter::Type::kString)},
+                                         {"padding",GameParameter(GameParameter::Type::kBool,false)}}  // no parameters
         };
 
 
@@ -268,7 +269,7 @@ namespace open_spiel::mpg {
       // Extract `environment` as a rank 3 tensor.
       auto environmentSubSpan= values.subspan(0, values.size() - 1);
       std::fill(environmentSubSpan.begin(), environmentSubSpan.end(), 0.0f);
-      TensorView<3> view(environmentSubSpan, {mpg_game->MaxGraphSize(),mpg_game->MaxGraphSize(),2}, true);
+      TensorView<3> view(environmentSubSpan, ObservationEnvironmentTensorShape(), true);
         for(int u = 0; u < environment->graph.size(); u++) for(auto [v, w]: environment->graph[u])
         {
             view[{u, v, ObservationAxis::kAdjacencyMatrix}] = 1;
@@ -321,6 +322,16 @@ namespace open_spiel::mpg {
         return current_state;
     }
 
+    int MPGEnvironmentState::GraphSize() const {
+        return environment->GraphSize();
+    }
+
+    std::vector<std::vector<int>> MPGEnvironmentState::ObservationTensorsShapeList() const
+    {
+        return {{environment->GraphSize(),environment->GraphSize(),2},{1}};
+    }
+
+
     std::string MPGMetaGame::ActionToString(Player player,
                                             Action action_id) const
     {
@@ -346,8 +357,8 @@ namespace open_spiel::mpg {
         return std::make_unique<MPGEnvironmentState>(shared_from_this(),last_environment);
     }
 
-    Game::TensorShapeSpecs MPGMetaGame::ObservationTensorShapeSpecs() const {
-        return Game::TensorShapeSpecs::kNestedList;
+    TensorShapeSpecs MPGMetaGame::ObservationTensorShapeSpecs() const {
+        return TensorShapeSpecs::kNestedList;
     }
 
     int MPGMetaGame::MaxGameLength() const
@@ -366,6 +377,16 @@ namespace open_spiel::mpg {
     std::shared_ptr<Environment> MPGMetaGame::GetLastEnvironment() const {
         absl::MutexLock lock(&environment_mutex);
         return last_environment;
+    }
+
+    std::array<int,3> MPGEnvironmentState::ObservationEnvironmentTensorShape() const {
+        if(game_->GetParameters().count("padding") && game_->GetParameters().at("padding").bool_value())
+        {
+            auto mpg_game_= dynamic_cast<const MPGMetaGame *>(game_.get());
+            return {mpg_game_->MaxGraphSize(),mpg_game_->MaxGraphSize(),2};
+        }
+        else
+            return {GraphSize(),GraphSize(),2};
     }
 
 
@@ -419,6 +440,10 @@ namespace open_spiel::mpg {
 
     Environment::Environment(WeightedGraphType graph, NodeType starting_state) : graph(std::move(graph)), starting_state(starting_state)
     {
+    }
+
+    int Environment::GraphSize() const {
+        return graph.size();
     }
 
 }  // namespace open_spiel

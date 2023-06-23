@@ -29,16 +29,18 @@ namespace open_spiel::mpg
    {
         if(args.size()<MinArgs() || args.size()>MaxArgs())
             throw std::invalid_argument("UniformGnpEnvironmentFactory::FromVector: invalid number of arguments");
-        auto n=static_cast<NodeType>(args[0]);
-        auto p=static_cast<WeightType>(args[1]);
-        auto a=static_cast<WeightType>(args[2]);
-        auto b=static_cast<WeightType>(args[3]);
-        if(args.size()==5)
+        auto n_min=static_cast<NodeType>(args[0]);
+        auto n_max=static_cast<NodeType>(args[1]);
+        auto p_min=static_cast<WeightType>(args[2]);
+        auto p_max=static_cast<WeightType>(args[3]);
+        auto a=static_cast<WeightType>(args[4]);
+        auto b=static_cast<WeightType>(args[5]);
+        if(args.size()==7)
         {
-            auto seed=static_cast<std::uint64_t>(args[4]);
-            return std::make_shared<MPGMetaGame>(params, std::make_unique<UniformGnpEnvironmentFactory>(n,p,a,b,seed));
+            auto seed=static_cast<std::uint64_t>(args[6]);
+            return std::make_shared<MPGMetaGame>(params, std::make_unique<UniformlyStochasticUniformGnpEnvironmentFactory>(n_min,n_max,p_min,p_max,a,b,seed));
         }
-        else return std::make_shared<MPGMetaGame>(params, std::make_unique<UniformGnpEnvironmentFactory>(n,p,a,b));
+        else return std::make_shared<MPGMetaGame>(params, std::make_unique<UniformlyStochasticUniformGnpEnvironmentFactory>(n_min,n_max,p_min,p_max,a,b));
     }
 
 

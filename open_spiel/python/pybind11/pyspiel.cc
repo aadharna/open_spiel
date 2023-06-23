@@ -339,6 +339,13 @@ PYBIND11_MODULE(pyspiel, m) {
            (std::vector<float>(State::*)(int) const) & State::ObservationTensor)
       .def("observation_tensor",
            (std::vector<float>(State::*)() const) & State::ObservationTensor)
+       .def("observation_tensor_shape",
+           &State::ObservationTensorShape)
+        .def("observation_tensor_shapes_list",
+           &State::ObservationTensorsShapeList)
+       .def("observation_tensor_shapes_map",
+           &State::ObservationTensorsShapeMap)
+           .def("observation_tensor_size",&State::ObservationTensorSize)
       .def("clone", &State::Clone)
       .def("child", &State::Child)
       .def("undo_action", &State::UndoAction)
@@ -364,12 +371,12 @@ PYBIND11_MODULE(pyspiel, m) {
       .def("distribution_support", &State::DistributionSupport)
       .def("update_distribution", &State::UpdateDistribution)
       .def("mean_field_population", &State::MeanFieldPopulation);
-  py::enum_<Game::TensorShapeSpecs>(m, "TensorShapeSpecs")
-          .value("UNKNOWN", Game::TensorShapeSpecs::kUnknown)
-            .value("VECTOR", Game::TensorShapeSpecs::kVector)
-            .value("NESTED_LIST", Game::TensorShapeSpecs::kNestedList)
-            .value("NESTED_DICT", Game::TensorShapeSpecs::kNestedMap)
-            .value("NESTED_MAP", Game::TensorShapeSpecs::kNestedMap);
+  py::enum_<TensorShapeSpecs>(m, "TensorShapeSpecs")
+          .value("UNKNOWN", TensorShapeSpecs::kUnknown)
+            .value("VECTOR", TensorShapeSpecs::kVector)
+            .value("NESTED_LIST", TensorShapeSpecs::kNestedList)
+            .value("NESTED_DICT", TensorShapeSpecs::kNestedMap)
+            .value("NESTED_MAP", TensorShapeSpecs::kNestedMap);
 
 
   py::classh<Game, PyGame> game(m, "Game");

@@ -655,19 +655,19 @@ std::string Game::ToString() const {
     {
         switch(ObservationTensorShapeSpecs())
         {
-            case Game::TensorShapeSpecs::kUnknown:
+            case TensorShapeSpecs::kUnknown:
                 SpielFatalError("ObservationTensorShapeSpecs() returned kUnknown");
-            case Game::TensorShapeSpecs::kScalar:
+            case TensorShapeSpecs::kScalar:
                 return 1;
-            case Game::TensorShapeSpecs::kVector:
+            case TensorShapeSpecs::kVector:
                 return ObservationTensorShape().empty() ? 0 : absl::c_accumulate(ObservationTensorShape(),1, std::multiplies<>());
-            case Game::TensorShapeSpecs::kNestedList:
+            case TensorShapeSpecs::kNestedList:
                 return absl::c_accumulate(ObservationTensorsShapeList(),0,
                                              [](const int& acc, const auto& v)
                                              {
                                                 return acc+absl::c_accumulate(v,1,std::multiplies<>());
                                              });
-            case Game::TensorShapeSpecs::kNestedMap:
+            case TensorShapeSpecs::kNestedMap:
                 return ObservationTensorShape().empty() ? 0 : absl::c_accumulate(ObservationTensorsShapeMap(),0,
                                              [](const int& acc, const auto& v)
                                              {
@@ -784,14 +784,14 @@ std::vector<float> State::ObservationTensor(Player player) const {
   // that implement it?
   SPIEL_CHECK_GE(player, 0);
   SPIEL_CHECK_LT(player, num_players_);
-  std::vector<float> observation(game_->ObservationTensorSize());
+  std::vector<float> observation(ObservationTensorSize());
   ObservationTensor(player, absl::MakeSpan(observation));
   return observation;
 }
 
 void State::ObservationTensor(Player player, std::vector<float>* values) const {
   // Retained for backwards compatibility.
-  values->resize(game_->ObservationTensorSize());
+  values->resize(ObservationTensorSize());
   ObservationTensor(player, absl::MakeSpan(*values));
 }
 
@@ -828,12 +828,12 @@ int State::MeanFieldPopulation() const {
   return 0;
 }
 
-    Game::TensorShapeSpecs Game::ObservationTensorShapeSpecs() const {
-        return Game::TensorShapeSpecs::kVector;
+    TensorShapeSpecs Game::ObservationTensorShapeSpecs() const {
+        return TensorShapeSpecs::kVector;
     }
 
-    Game::TensorShapeSpecs Game::InformationStateTensorShapeSpecs() const {
-        return Game::TensorShapeSpecs::kVector;
+    TensorShapeSpecs Game::InformationStateTensorShapeSpecs() const {
+        return TensorShapeSpecs::kVector;
     }
 
 
@@ -865,4 +865,53 @@ void SpielFatalErrorWithStateInfo(const std::string& error_msg,
   SpielFatalError(absl::StrCat(error_msg, "Serialized state:\n", info));
 }
 
+    std::vector<int> State::ObservationTensorShape() const
+    {
+        return game_->ObservationTensorShape();
+    }
+
+    std::vector<std::vector<int>> State::ObservationTensorsShapeList() const
+    {
+        return game_->ObservationTensorsShapeList();
+    }
+
+    TensorShapeSpecs State::ObservationTensorShapeSpecs() const
+    {
+        return game_->ObservationTensorShapeSpecs();
+    }
+
+    TensorShapeSpecs State::InformationStateTensorShapeSpecs() const
+    {
+        return game_->InformationStateTensorShapeSpecs();
+    }
+
+    std::map<std::string, std::vector<int>> State::ObservationTensorsShapeMap() const
+    {
+        return game_->ObservationTensorsShapeMap();
+    }
+
+    int State::ObservationTensorSize() const
+    {
+        switch(ObservationTensorShapeSpecs())
+        {
+            case TensorShapeSpecs::kUnknown:
+                SpielFatalError("ObservationTensorShapeSpecs() returned kUnknown");
+            case TensorShapeSpecs::kScalar:
+                return 1;
+            case TensorShapeSpecs::kVector:
+                return ObservationTensorShape().empty() ? 0 : absl::c_accumulate(ObservationTensorShape(),1, std::multiplies<>());
+            case TensorShapeSpecs::kNestedList:
+                return absl::c_accumulate(ObservationTensorsShapeList(),0,
+                                          [](const int& acc, const auto& v)
+                                          {
+                                              return acc+absl::c_accumulate(v,1,std::multiplies<>());
+                                          });
+            case TensorShapeSpecs::kNestedMap:
+                return ObservationTensorShape().empty() ? 0 : absl::c_accumulate(ObservationTensorsShapeMap(),0,
+                                                                                 [](const int& acc, const auto& v)
+                                                                                 {
+                                                                                     return acc+absl::c_accumulate(v.second,1,std::multiplies<>());
+                                                                                 });
+        }
+    }
 }  // namespace open_spiel

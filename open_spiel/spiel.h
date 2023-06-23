@@ -206,6 +206,15 @@ using HistoryDistribution =
 class Game;
 class Observer;
 
+enum class TensorShapeSpecs
+{
+    kUnknown=-1,
+    kScalar=0,
+    kVector,
+    kNestedMap,
+    kNestedList
+};
+
 // An abstract class that represents a state of the game.
 class State {
  public:
@@ -558,7 +567,15 @@ class State {
   {
     return ObservationTensor(CurrentPlayer());
   }
-  void ObservationTensor(Player player, std::vector<float>* values) const;
+
+  [[nodiscard]] virtual std::vector<int> ObservationTensorShape() const;
+  [[nodiscard]] virtual std::vector<std::vector<int>> ObservationTensorsShapeList() const;
+  [[nodiscard]] virtual TensorShapeSpecs InformationStateTensorShapeSpecs() const;
+  [[nodiscard]] virtual int ObservationTensorSize() const;
+  virtual std::map<std::string, std::vector<int>> ObservationTensorsShapeMap() const;
+    virtual TensorShapeSpecs ObservationTensorShapeSpecs() const;
+
+    void ObservationTensor(Player player, std::vector<float>* values) const;
 
   // Return a copy of this state.
   virtual std::unique_ptr<State> Clone() const = 0;
@@ -878,15 +895,6 @@ class Game : public std::enable_shared_from_this<Game> {
   virtual TensorLayout ObservationTensorLayout() const {
     return TensorLayout::kCHW;
   }
-
-    enum class TensorShapeSpecs
-    {
-      kUnknown=-1,
-        kScalar=0,
-        kVector,
-        kNestedMap,
-        kNestedList
-    };
 
     virtual TensorShapeSpecs ObservationTensorShapeSpecs() const;
     virtual TensorShapeSpecs InformationStateTensorShapeSpecs() const;

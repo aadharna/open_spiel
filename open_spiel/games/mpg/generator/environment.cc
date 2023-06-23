@@ -14,7 +14,7 @@
 namespace open_spiel::mpg
 {
     UniformlyStochasticUniformGnpEnvironmentFactory::UniformlyStochasticUniformGnpEnvironmentFactory (NodeType n_min,
-                                                                                                      NodeType n_max, NodeType p_min, NodeType p_max, WeightType a, WeightType b,
+                                                                                                      NodeType n_max, double p_min, double p_max, WeightType a, WeightType b,
                                                                                                       std::uint64_t seed) : GeneratorEnvironmentFactory
                                                                                                                                     (
                                                                                                                                             std::make_shared<WeightedGraphGenerator>(std::make_shared<UniformlyStochasticSinklessGnpGenerator>(n_min,n_max,p_min,p_max,seed),
