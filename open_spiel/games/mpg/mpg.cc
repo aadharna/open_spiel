@@ -331,12 +331,8 @@ namespace open_spiel::mpg {
 
     std::unique_ptr<State> MPGEnvironmentState::Clone() const
     {
-        class UniqueEnabler : public MPGEnvironmentState
-        {
-        public:
-            UniqueEnabler(const MPGEnvironmentState& other, Clone_t Cloner) : MPGEnvironmentState(other, Cloner) {}
-        };
-      return std::make_unique<UniqueEnabler>(*this, Cloner);
+        std::unique_ptr<State> clone(new MPGEnvironmentState(*this, Cloner));
+      return clone;
     }
 
     MPGEnvironmentState::MPGEnvironmentState(std::shared_ptr<const Game> game,
@@ -402,7 +398,22 @@ namespace open_spiel::mpg {
 
     int MPGMetaGame::MaxGameLength() const
     {
-        return game_parameters_.at("max_moves").int_value();
+        class Inf_t
+                {
+                public:
+                    Inf_t()=default;
+                    bool operator<(const Inf_t& other) const
+                    {
+                        return false;
+                    }
+                } Inf{};
+        using ClosureType=std::variant<int, Inf_t>;
+        ClosureType max_length(Inf);
+        if(game_parameters_.count("max_moves"))
+            max_length= std::min<ClosureType >(max_length, game_parameters_.at("max_moves").int_value());
+        if(game_parameters_.count("max_repeats"))
+            max_length= std::min<ClosureType >(max_length, 2*game_parameters_.at("max_repeats").int_value()*MaxGraphSize());
+        return max_length.index()==0?std::get<int>(max_length):std::numeric_limits<int>::max();
     }
 
     int MPGMetaGame::MaxGraphSize() const {

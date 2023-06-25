@@ -32,15 +32,15 @@ class ActorStats(TypedDict):
 
 class Actor(utils.Watched):
 
-    def __init__(self, config, num=None, name=None):
-        super().__init__(config, num, name)
+    def __init__(self, config, num=None, name=None, **kwargs):
+        super().__init__(config, num, name, **kwargs)
 
         pass
 
 
 class MultiProcActor(Actor):
-    def __init__(self, config, num=None, name=None):
-        super().__init__(config, num, name)
+    def __init__(self, config, num=None, name=None, **kwargs):
+        super().__init__(config, num, name, **kwargs)
         # Time resolution in seconds for updating the actor's state.
         self.stats_frequency = config.services.actors.stats_frequency or config.stats_frequency or 60
         self._stats = None

@@ -1,5 +1,6 @@
 import abc
 import math
+import socket
 import time
 from typing import List, Dict, TypedDict, Union
 
@@ -13,6 +14,7 @@ import random
 import reverb
 from .services import actor
 from .multiprocess import queue as queue_lib
+import mpg.ml.dataset.transforms as dataset_transforms
 
 
 class ReplayBufferAdapter(abc.ABC):
@@ -106,12 +108,34 @@ class QueuesReplayBuffer(ReplayBufferAdapter):
 
 
 class GrpcReplayBuffer(ReplayBufferAdapter):
-    def __init__(self, address: str, port: int, table: str):
+
+    def _extract_data(self, args):
+        environment, state, value, policy = args.data
+        return (
+                    {
+                    "environment": environment,
+                    "state": state,
+                    },
+                    {
+                        "value_targets": value,
+                        "policy_targets": policy
+                    }
+                )
+
+    def __init__(self, config,batch_size=64,padding=False,timeout:Union[float,None]=None):
         super().__init__()
-        self.address = address
-        self.port = port
-        self.table = table
-        self.client = reverb.Client(f"{self.address}:{self.port}")
+        self.config=config
+        self.address = config.address
+        self.port = config.port
+        self.table = config.table
+        self.full_address = f"{self.address}:{self.port}"
+        self.client = reverb.Client(self.full_address)
+        dataset=reverb.TimestepDataset.from_table_signature(self.full_address, self.table,
+                                                                  max_in_flight_samples_per_worker=config.max_in_flight_samples_per_worker,
+                                                            get_signature_timeout_secs=timeout)
+        self.batch_op=dataset_transforms.BatchDatasetTransform(batch_size=batch_size, pad=padding)
+        self.transformers = dataset_transforms.DatasetStackTransforms([self.batch_op])
+        self._dataset = self.transformers(dataset.map(self._extract_data))
 
     pass
 
@@ -138,17 +162,23 @@ class GrpcReplayBuffer(ReplayBufferAdapter):
         return train_inputs
 
     def dataset(self):
-        return reverb.TimestepDataset.from_table_signature(self.client, self.table)
+        return self._dataset
 
     def length(self):
         return self.client.server_info()[self.table].current_size
+
+    def rebatch(self,new_batch_size=None):
+        if new_batch_size is None:
+            new_batch_size=self.config.batch_size
+        self.batch_op.rebatch(new_batch_size)
+
 
     def sample_by_fraction(self, p):
         return self.sample_by_numbers(math.ceil(p * self.length()))
 
     @property
     def supports_dataset(self):
-        return False
+        return True
 
 
 class Broadcaster(abc.ABC):
@@ -162,9 +192,9 @@ class ProcessesBroadcaster(Broadcaster):
     def __init__(self, processes: List[spawn.Process]):
         self.processes = processes
 
-    def broadcast(self, path):
+    def broadcast(self, msg):
         for process in self.processes:
-            process.queue.put(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_MESSAGE, path))
+            process.queue.put(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_MESSAGE, msg))
         pass
 
     def request_exit(self):
@@ -176,6 +206,9 @@ class ProcessesBroadcaster(Broadcaster):
                 process.queue.get_nowait()
             process.join()
         pass
+
+    def __call__(self, msg):
+        self.broadcast(msg)
 
 
 class ModelReceiver(abc.ABC):

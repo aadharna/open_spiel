@@ -35,14 +35,14 @@ class EvaluationStats(TypedDict):
 
 
 class Evaluator(utils.Watched):
-    def __init__(self, config, num=None, name=None):
-        super().__init__(config, num, name)
+    def __init__(self, config, num=None, name=None, **kwargs):
+        super().__init__(config, num, name, **kwargs)
         pass
 
 
 class MultiProcEvaluator(Evaluator):
-    def __init__(self, config, num=None, opponent="mcts", name=None):
-        super().__init__(config, num, name)
+    def __init__(self, config, num=None, opponent="mcts", name=None, **kwargs):
+        super().__init__(config, num, name, **kwargs)
         self.opponent = opponent
         self.stats_frequency = config.services.evaluators.stats_frequency or config.stats_frequency or 60
         self._stats = None

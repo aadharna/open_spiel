@@ -25,13 +25,15 @@ training:
     batch_size: 64
     learning_rate: 0.001
     weight_decay: 0.0001
+    samples_per_iteration: 1000
     checkpoint_freq: 100 # Should be renamed to checkpoint_interval
     max_steps: 100000 #Should be renamed to max_iterations
     steps_per_epoch: 1000
     epochs_per_iteration: 16
     optimizer: "adam" #One of "adam", "sgd", "rmsprop"
     path: null #Path to the model. Leave empty for a randomly generated path
-    dataset_api: false # Whether to use the dataset API or not
+    dataset_api: true # Whether to use the dataset API or not
+    padding: true # Whether to pad the dataset or use ragged tensors
 
 
 
@@ -43,6 +45,9 @@ replay_buffer:
         type: grpc #One of "local", "grpc"
         address: localhost
         port : 50051
+        max_in_flight_samples_per_worker: 192 # Maximum number of samples that can be requested from a worker at a time.
+        # This is used to limit the memory usage of the replay buffer. As a rule of thumb, it should
+        # be a small multiple of the batch size (2x-3x).
         sampler:
             name: "random" # one of "random", "fifo", "lifo", "priority"
             params: [] # Additional parameters for the sampler
@@ -67,6 +72,8 @@ services:
         stats_frequency: 100 # Frequency of the statistics collection in seconds
         evaluation_window: 100
         evaluation_levels: 7
+    heartbeat_response: 0.300 # The number of seconds to wait before responding to a heartbeat request
+    timeout: 3 # The number of seconds to wait before considering a worker dead
 
 mcts:
     uct_c: 2

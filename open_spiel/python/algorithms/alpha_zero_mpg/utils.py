@@ -126,20 +126,25 @@ def get_reverb_signature():
                        tf.TensorSpec(shape=(None,), dtype=tf.float32)]
 
 class Watched(abc.ABC):
-    def __init__(self, config, num=None, name=None, *, to_stdout=False):
+    def __init__(self, config, num=None, name=None, *, to_stdout=False,log_directory=None):
         self.config = config
         self.num = num
         if name is None:
             name = self.__class__.__name__
         self.name = name
         self.to_stdout = to_stdout
+        self.path = log_directory
         pass
 
     def start(self, *args, **kwargs):
         name = self.name
         if self.num is not None:
             name += "-" + str(self.num)
-        with file_logger.FileLogger(self.config.path, name, self.config.quiet) as logger:
+        if self.path is None:
+            path=self.config.path
+        else:
+            path=self.path
+        with file_logger.FileLogger(path, name, self.config.quiet) as logger:
             logger.also_to_stdout = self.to_stdout
             print("{} started".format(name))
             logger.print("{} started".format(name))
@@ -367,6 +372,59 @@ class TrainInput(collections.namedtuple(
             value=np.expand_dims(value, 1),
             policy=np.array(policy),
         )
+
+
+
+def nested_dict_to_namespace(nested_dict):
+    """Converts a nested dict to a namespace."""
+    if isinstance(nested_dict,argparse.Namespace):
+        return nested_dict_to_namespace(vars(nested_dict))
+    if type(nested_dict) != dict and type(nested_dict) != list:
+        return nested_dict
+    namespace = argparse.Namespace()
+    if type(nested_dict) is dict:
+        for key, value in nested_dict.items():
+            setattr(namespace, key, nested_dict_to_namespace(value))
+
+    elif type(nested_dict) is list:
+        namespace = [None]*len(nested_dict)
+        for i, value in enumerate(nested_dict):
+            namespace[i]=nested_dict_to_namespace(value)
+    return namespace
+
+
+def compatibility_mode(config):
+    config.fix_environment = config.game.fix_environment
+    config.temperature = config.mcts.temperature
+    config.temperature_drop = config.mcts.temperature_drop
+    config.mcts.policy_epsilon = config.mcts.policy_epsilon
+    config.mcts.policy_alpha = config.mcts.policy_alpha
+    config.mcts.max_simulations = config.mcts.max_simulations
+    config.mcts.temperature_drop = config.mcts.temperature_drop
+    if "max_moves" in vars(config.game):
+        config.max_moves = config.game.max_moves
+    config.nn_model = config.model.architecture
+    config.nn_width = config.model.width
+    config.nn_depth = config.model.depth
+    config.training_batch_size = config.training.batch_size
+    config.learning_rate = config.training.learning_rate
+    config.weight_decay = config.training.weight_decay
+    config.checkpoint_freq = config.training.checkpoint_freq
+    config.max_steps = config.training.max_steps
+    config.steps_per_epoch = config.training.steps_per_epoch
+    config.epochs_per_iteration = config.training.epochs_per_iteration
+    config.evaluation_window = config.services.evaluators.evaluation_window
+    config.regularization = config.training.weight_decay
+    config.policy_epsilon = config.mcts.policy_epsilon
+    config.policy_alpha = config.mcts.policy_alpha
+    config.uct_c = config.mcts.uct_c
+    config.replay_buffer_size = config.replay_buffer.buffer_size
+    config.replay_buffer_reuse = config.replay_buffer.reuse
+    config.max_simulations = config.mcts.max_simulations
+    config.train_batch_size = config.training.batch_size
+
+
+
 
 INPUT_NAMES=("environment","state")
 OUTPUT_NAMES=("value","policy")

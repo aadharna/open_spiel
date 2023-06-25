@@ -216,8 +216,8 @@ class ModelV2:
             UpdateIterationCallback(iteration),
             keras.callbacks.CSVLogger(os.path.join(self.config.path, "log.csv"), append=True)
         ]
-        if type(train_inputs) is tf.data.Dataset:
-            log = self.model.fit(train_inputs.batch(self.config.train_batch_size), epochs=self.config.epochs_per_iteration, verbose=1, callbacks=callbacks,
+        if isinstance(train_inputs, tf.data.Dataset):
+            log = self.model.fit(train_inputs, epochs=self.config.epochs_per_iteration, verbose=1, callbacks=callbacks,
                                  steps_per_epoch=self.config.steps_per_epoch)
         else:
 

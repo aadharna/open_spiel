@@ -137,9 +137,8 @@ def alpha_zero(config: Config):
                 signature=utils.get_reverb_signature()
             )
             reverb_server = reverb.Server(tables=[table], port=config.replay_buffer.implementation.port)
-            replay_buffer = dto.GrpcReplayBuffer(address=config.replay_buffer.implementation.address,
-                                                 port=config.replay_buffer.implementation.port,
-                                                 table=config.replay_buffer.implementation.table)
+            replay_buffer = dto.GrpcReplayBuffer(config=config.replay_buffer.implementation,batch_size=config.training.batch_size,
+                                                 padding=config.training.padding)
             actors_orchestrator = orchestrator.ActorsGrpcOrchestrator(actors, config=config,
                                                                       max_game_length=game.max_game_length())
             # evaluator_orchestrator = orchestrator.EvaluatorOrchestrator(evaluators)

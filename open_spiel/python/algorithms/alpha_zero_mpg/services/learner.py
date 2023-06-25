@@ -12,8 +12,8 @@ from open_spiel.python.algorithms.alpha_zero_mpg import utils, model as model_li
 
 
 class Learner(utils.Watched):
-    def __init__(self, config, replay_buffer,model_broadcaster, num=None, name=None):
-        super().__init__(config, num, name,to_stdout=True)
+    def __init__(self, config, replay_buffer,model_broadcaster, num=None, name=None, **kwargs):
+        super().__init__(config, num, name,to_stdout=True, **kwargs)
         self.replay_buffer = replay_buffer
         self.model_broadcaster= model_broadcaster
 
@@ -24,10 +24,10 @@ class Learner(utils.Watched):
         # for _ in range(len(replay_buffer) // config.train_batch_size):
         #  data = replay_buffer.sample(config.train_batch_size)
         #  losses.append(model.update(data))
-        if self.config.dataset_api:
+        if self.config.training.dataset_api:
             data = self.replay_buffer.dataset()
         else:
-            data = self.replay_buffer.sample(64)
+            data = self.replay_buffer.sample(self.config.training.samples_per_iteration)
         model = model_resource.value
         losses.append(model.update(data))
         # Always save a checkpoint, either for keeping or for loading the weights to
@@ -50,7 +50,7 @@ class Learner(utils.Watched):
         logger.print("Model size:", model_resource.value.count_trainable_variables(), "variables")
         save_path = model_resource.value.save_checkpoint_counter(0)
         logger.print("Initial checkpoint:", save_path)
-        self.model_broadcaster.broadcast(save_path)
+        self.model_broadcaster(save_path)
 
         data_log = data_logger.DataLoggerJsonLines(config.path, "learner", True)
         evals = [Buffer(config.services.evaluators.evaluation_window) for _ in range(config.services.evaluators.evaluation_levels)]
