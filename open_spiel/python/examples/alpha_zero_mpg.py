@@ -13,7 +13,10 @@
 # limitations under the License.
 
 """Starting point for playing with the AlphaZero algorithm."""
+import os
+import sys
 
+import yaml
 from absl import app
 from absl import flags
 from argparse import Namespace
@@ -24,81 +27,69 @@ from open_spiel.python.algorithms.alpha_zero_mpg import model as model_lib
 from open_spiel.python.algorithms.alpha_zero_mpg import utils
 from open_spiel.python.utils import spawn
 
-flags.DEFINE_string("game", "connect_four", "Name of the game.")
-flags.DEFINE_integer("uct_c", 2, "UCT's exploration constant.")
-flags.DEFINE_integer("max_simulations", 300, "How many simulations to run.")
-flags.DEFINE_integer("train_batch_size", 2 ** 10, "Batch size for learning.")
-flags.DEFINE_integer("replay_buffer_size", 2 ** 16,
-                     "How many states to store in the replay buffer.")
-flags.DEFINE_integer("replay_buffer_reuse", 3,
-                     "How many times to learn from each state.")
-flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
-flags.DEFINE_float("weight_decay", 0.0001, "L2 regularization strength.")
-flags.DEFINE_float("policy_epsilon", 0.25, "What noise epsilon to use.")
-flags.DEFINE_float("policy_alpha", 1, "What dirichlet noise alpha to use.")
-flags.DEFINE_float("temperature", 1,
-                   "Temperature for final move selection.")
-flags.DEFINE_integer("temperature_drop", 10,  # Less than AZ due to short games.
-                     "Drop the temperature to 0 after this many moves.")
-flags.DEFINE_enum("nn_model", "mlp", model_lib.valid_model_types,
-                  "What type of model should be used?.")
-flags.DEFINE_integer("nn_width", 2 ** 7, "How wide should the network be.")
-flags.DEFINE_integer("nn_depth", 10, "How deep should the network be.")
-flags.DEFINE_string("path", None, "Where to save checkpoints.")
-flags.DEFINE_integer("checkpoint_freq", 100, "Save a checkpoint every N steps.")
-flags.DEFINE_integer("actors", 2, "How many actors to run.")
-flags.DEFINE_integer("evaluators", 1, "How many evaluators to run.")
-flags.DEFINE_integer("evaluation_window", 100,
-                     "How many games to average results over.")
-flags.DEFINE_integer(
-    "eval_levels", 7,
-    ("Play evaluation games vs MCTS+Solver, with max_simulations*10^(n/2)"
-     " simulations for n in range(eval_levels). Default of 7 means "
-     "running mcts with up to 1000 times more simulations."))
-flags.DEFINE_integer("max_steps", 0, "How many learn steps before exiting.")
-flags.DEFINE_bool("quiet", True, "Don't show the moves as they're played.")
-flags.DEFINE_bool("verbose", False, "Show the MCTS stats of possible moves.")
-flags.DEFINE_bool("fix_environment", False, "Fix the game environment for debugging.")
-# 1 for the first version of the algorithm, 2 for the second version.
-flags.DEFINE_integer("version",1, "Version of the algorithm.")
+def nested_dict_to_namespace(nested_dict):
+    """Converts a nested dict to a namespace."""
+    if type(nested_dict) == Namespace:
+        return nested_dict_to_namespace(vars(nested_dict))
+    if type(nested_dict) != dict and type(nested_dict) != list:
+        return nested_dict
+    namespace = Namespace()
+    if type(nested_dict) is dict:
+        for key, value in nested_dict.items():
+            setattr(namespace, key, nested_dict_to_namespace(value))
 
-FLAGS = flags.FLAGS
+    elif type(nested_dict) is list:
+        namespace = [None]*len(nested_dict)
+        for i, value in enumerate(nested_dict):
+            namespace[i]=nested_dict_to_namespace(value)
+    return namespace
+
+# TODO: invert the direction of the conversion
+def compatibility_mode(config):
+    config.fix_environment = config.game.fix_environment
+    config.temperature = config.mcts.temperature
+    config.temperature_drop = config.mcts.temperature_drop
+    config.mcts.policy_epsilon = config.mcts.policy_epsilon
+    config.mcts.policy_alpha = config.mcts.policy_alpha
+    config.mcts.max_simulations = config.mcts.max_simulations
+    config.mcts.temperature_drop = config.mcts.temperature_drop
+    config.max_moves = config.game.max_moves
+    config.nn_model = config.model.architecture
+    config.nn_width = config.model.width
+    config.nn_depth = config.model.depth
+    config.training_batch_size = config.training.batch_size
+    config.learning_rate = config.training.learning_rate
+    config.weight_decay = config.training.weight_decay
+    config.checkpoint_freq = config.training.checkpoint_freq
+    config.max_steps = config.training.max_steps
+    config.steps_per_epoch = config.training.steps_per_epoch
+    config.epochs_per_iteration = config.training.epochs_per_iteration
+    config.evaluation_window = config.services.evaluators.evaluation_window
+    config.regularization = config.training.weight_decay
+    config.policy_epsilon = config.mcts.policy_epsilon
+    config.policy_alpha = config.mcts.policy_alpha
+    config.uct_c = config.mcts.uct_c
+    config.replay_buffer_size = config.replay_buffer.buffer_size
+    config.replay_buffer_reuse = config.replay_buffer.reuse
+    config.max_simulations = config.mcts.max_simulations
+    config.train_batch_size = config.training.batch_size
+
 
 
 def main(unused_argv):
-    config = utils.Config(
-        game=FLAGS.game,
-        path=FLAGS.path,
-        learning_rate=FLAGS.learning_rate,
-        weight_decay=FLAGS.weight_decay,
-        train_batch_size=FLAGS.train_batch_size,
-        replay_buffer_size=FLAGS.replay_buffer_size,
-        replay_buffer_reuse=FLAGS.replay_buffer_reuse,
-        max_steps=FLAGS.max_steps,
-        checkpoint_freq=FLAGS.checkpoint_freq,
-        actors=FLAGS.actors,
-        evaluators=FLAGS.evaluators,
-        uct_c=FLAGS.uct_c,
-        max_simulations=FLAGS.max_simulations,
-        policy_alpha=FLAGS.policy_alpha,
-        policy_epsilon=FLAGS.policy_epsilon,
-        temperature=FLAGS.temperature,
-        temperature_drop=FLAGS.temperature_drop,
-        evaluation_window=FLAGS.evaluation_window,
-        eval_levels=FLAGS.eval_levels,
-        verbose=FLAGS.verbose,
-        nn_model=FLAGS.nn_model,
-        nn_width=FLAGS.nn_width,
-        nn_depth=FLAGS.nn_depth,
-        observation_shape=None,
-        output_size=None,
-        quiet=FLAGS.quiet,
-        fix_environment=FLAGS.fix_environment,
-        version=FLAGS.version,
-    )
-    if config.version == 1:
+    try:
+        path=os.path.dirname(__file__)
+        file="".join(os.path.basename(__file__).split(".")[:-1])+".yml"
+        with open(os.path.join(path,file), "r") as f:
+            config = yaml.load(f, Loader=yaml.SafeLoader)
+            config = nested_dict_to_namespace(config)
+    except FileNotFoundError:
+        print("No config file found. Using default config.", file=sys.stderr)
+    # For compatibility with the old config file
+    compatibility_mode(config)
+    if config.specification == 1:
         alpha_zero_v1.alpha_zero(config)
-    elif config.version == 2:
+    elif config.specification == 2:
         alpha_zero_v2.alpha_zero(config)
     else:
         raise ValueError("Invalid version: {}".format(config.version))
@@ -106,4 +97,4 @@ def main(unused_argv):
 
 if __name__ == "__main__":
     with spawn.main_handler():
-        app.run(main)
+        main(sys.argv)

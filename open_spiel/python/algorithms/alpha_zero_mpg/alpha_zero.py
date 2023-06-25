@@ -51,12 +51,10 @@ from open_spiel.python.algorithms.alpha_zero_mpg.mcts import evaluator as evalua
 from open_spiel.python.algorithms.alpha_zero_mpg import model as model_lib
 import pyspiel
 
-from open_spiel.python.algorithms.alpha_zero_mpg.model import nested_reshape
+from open_spiel.python.algorithms.alpha_zero_mpg.utils import nested_reshape
 from open_spiel.python.utils import data_logger
-from open_spiel.python.utils import file_logger
 from open_spiel.python.utils import spawn
 from open_spiel.python.utils import stats
-import tensorflow as tf
 from . import utils
 from .utils import TrajectoryState,Buffer,Config
 

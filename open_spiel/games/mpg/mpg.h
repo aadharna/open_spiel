@@ -91,6 +91,8 @@ namespace open_spiel::mpg
         NodeType starting_state{};
         Environment()= default;
         Environment(WeightedGraphType graph, NodeType starting_state);
+
+        [[nodiscard]] int GraphSize() const;
     };
 
     using AdjacencyPayoffsType = std::map<NodeType,WeightType> ;
@@ -127,7 +129,7 @@ namespace open_spiel::mpg
         NodeType StateAt(NodeType cell) const { return cell; }
         Player outcome() const { return outcome_; }
 
-        [[nodiscard]] virtual int MaxNumMoves() const;
+        [[nodiscard]] virtual std::uint32_t MaxNumMoves() const;
 
         // Only used by Ultimate Tic-Tac-Toe.
         void SetCurrentPlayer(Player player) { current_player_ = player; }
@@ -135,13 +137,21 @@ namespace open_spiel::mpg
         WeightType GetMeanPayoff() const;
 
         AdjacencyPayoffsType LegalActionsWithPayoffs() const;
-     protected:
 
+        [[nodiscard]] int GraphSize() const;
+
+        std::vector<std::vector<int>> ObservationTensorsShapeList() const override;
+
+    protected:
+      inline static constexpr class Clone_t{} Cloner{};
+      MPGEnvironmentState(const MPGEnvironmentState& other, Clone_t);
       void DoApplyAction(Action move) override;
-      NodeType current_state = 0;
+      std::array<int,3> ObservationEnvironmentTensorShape() const;
+        NodeType current_state = 0;
       WeightType mean_payoff = 0;
       std::vector<NodeType> state_history;
       std::shared_ptr<Environment> environment;
+      std::array<std::vector<std::uint32_t>,2> visits_per_player;
 
      private:
       Player current_player_ = 0;         // Player zero goes first
@@ -166,7 +176,7 @@ namespace open_spiel::mpg
           throw std::runtime_error("Not implemented");
       }
 
-      Game::TensorShapeSpecs ObservationTensorShapeSpecs() const override;
+      TensorShapeSpecs ObservationTensorShapeSpecs() const override;
 
       std::vector<std::vector<int>> ObservationTensorsShapeList() const override
       {

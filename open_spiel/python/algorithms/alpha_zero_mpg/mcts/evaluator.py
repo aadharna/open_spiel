@@ -22,7 +22,7 @@ import pyspiel
 from open_spiel.python.utils import lru_cache
 from open_spiel.python.algorithms.alpha_zero import evaluator as evaluator_lib
 import tensorflow as tf
-from open_spiel.python.algorithms.alpha_zero_mpg.model import nested_reshape
+from open_spiel.python.algorithms.alpha_zero_mpg.utils import nested_reshape
 from .utils import FloatArrayLikeType
 
 from .. import resource

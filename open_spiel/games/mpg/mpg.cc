@@ -24,10 +24,11 @@
 #include "open_spiel/utils/tensor_view.h"
 #include "mpg_generator.h"
 #include "string_compress.h"
+#include "generator/environment.h"
 
 namespace open_spiel::mpg {
     //std::unique_ptr<MetaFactory> metaFactory = std::make_unique<ExampleFactory>();
-    std::unique_ptr<MetaFactory> metaFactory = std::make_unique<ParserMetaFactory>();
+    std::unique_ptr<ParserMetaFactory> parserMetaFactory = std::make_unique<ParserMetaFactory>();
 
     namespace
     {
@@ -46,19 +47,24 @@ namespace open_spiel::mpg {
             /*provides_information_state_tensor=*/false,
             /*provides_observation_string=*/true,
             /*provides_observation_tensor=*/true,
-            /*parameter_specification=*/{{"max_moves",GameParameter(GameParameter::Type::kInt,true)},
-                                         {"generator",GameParameter(GameParameter::Type::kString,true)},
-                                         {"max_size",GameParameter(GameParameter::Type::kInt,true)},
-                                         {"generator_params", GameParameter(GameParameter::Type::kString,false)},
-                                         {"specs_file",GameParameter(GameParameter::Type::kString,false)},
-                                         {"representation",GameParameter(GameParameter::Type::kString)}}  // no parameters
+            /*parameter_specification=*/{{"max_moves", GameParameter(GameParameter::Type::kInt, false)},
+                                         {"generator", GameParameter(GameParameter::Type::kString, true)},
+                                         {"max_size", GameParameter(GameParameter::Type::kInt, true)},
+                                         {"generator_params", GameParameter(GameParameter::Type::kString, false)},
+                                         {"specs_file", GameParameter(GameParameter::Type::kString, false)},
+                                         {"representation", GameParameter(GameParameter::Type::kString)},
+                                         {"padding", GameParameter(GameParameter::Type::kBool, false)}, // no parameters
+                                         {"max_repeats", GameParameter(GameParameter::Type::kInt, false)}
+                           }
         };
 
 
 
         std::shared_ptr<const Game> Factory(const GameParameters& params)
         {
-            auto game=metaFactory->CreateGame(params);
+            if(! params.count("max_moves") && ! params.count("max_repeats"))
+                throw std::invalid_argument("Either one of max_moves or max_repeats must be specified");
+            auto game=parserMetaFactory->CreateGame(params);
             game->NewInitialEnvironmentState();
             return game;
         }
@@ -137,7 +143,8 @@ namespace open_spiel::mpg {
       current_player_ = ! current_player_;
       state_history.push_back(current_state);
       num_moves_ += 1;
-        }
+      visits_per_player[current_player_][move] += 1;
+    }
 
     std::vector<Action> MPGEnvironmentState::LegalActions() const {
       if (IsTerminal()) return {};
@@ -214,13 +221,23 @@ namespace open_spiel::mpg {
         }
     }
 
-    bool MPGEnvironmentState::IsTerminal() const {
-      return num_moves_ >= MaxNumMoves();
+    bool MPGEnvironmentState::IsTerminal() const
+    {
+        bool terminal=false;
+        if(game_->GetParameters().count("max_repeats"))
+            terminal = std::any_of(visits_per_player[PlayerIdentifier::kMinPlayer].begin(),
+                                   visits_per_player[PlayerIdentifier::kMinPlayer].end(),
+                                   [this](auto p){return p >= game_->GetParameters()["max_repeats"].int_value();});
+        terminal = terminal || num_moves_ >= MaxNumMoves();
+      return terminal;
     }
 
-    int MPGEnvironmentState::MaxNumMoves() const
+    std::uint32_t MPGEnvironmentState::MaxNumMoves() const
     {
-        return game_->GetParameters()["max_moves"].int_value();
+        if(game_->GetParameters().count("max_moves"))
+            return game_->GetParameters()["max_moves"].int_value();
+        else if(game_->GetParameters().count("max_repeats"))
+            return 2*GraphSize()* game_->GetParameters()["max_repeats"].int_value();
     }
 
     double Player1Return(double mean_payoff)
@@ -267,7 +284,7 @@ namespace open_spiel::mpg {
       // Extract `environment` as a rank 3 tensor.
       auto environmentSubSpan= values.subspan(0, values.size() - 1);
       std::fill(environmentSubSpan.begin(), environmentSubSpan.end(), 0.0f);
-      TensorView<3> view(environmentSubSpan, {mpg_game->MaxGraphSize(),mpg_game->MaxGraphSize(),2}, true);
+      TensorView<3> view(environmentSubSpan, ObservationEnvironmentTensorShape(), true);
         for(int u = 0; u < environment->graph.size(); u++) for(auto [v, w]: environment->graph[u])
         {
             view[{u, v, ObservationAxis::kAdjacencyMatrix}] = 1;
@@ -277,9 +294,11 @@ namespace open_spiel::mpg {
         values[values.size() - 1] = current_state;
     }
 
-    void MPGEnvironmentState::UndoAction(Player player, Action move) {
+    void MPGEnvironmentState::UndoAction(Player player, Action move)
+    {
     SPIEL_CHECK_GE(move, 0);
     SPIEL_CHECK_LT(move, num_distinct_actions_);
+        visits_per_player[current_player_][move] -= 1;
         float K= static_cast<float>(num_moves_)/static_cast<float>(num_moves_+1);
         state_history.pop_back();
         current_state = state_history.back();
@@ -296,20 +315,34 @@ namespace open_spiel::mpg {
         return environment->graph[current_state];
     }
 
+    MPGEnvironmentState::MPGEnvironmentState(const MPGEnvironmentState& other, MPGEnvironmentState::Clone_t):State(other)
+    {
+        current_state=other.current_state;
+        current_player_=other.current_player_;
+        num_moves_=other.num_moves_;
+        mean_payoff=other.mean_payoff;
+        environment=other.environment;
+        state_history=other.state_history;
+        visits_per_player=other.visits_per_player;
+        history_=other.history_;
+        move_number_=other.move_number_;
+    }
+
 
     std::unique_ptr<State> MPGEnvironmentState::Clone() const
     {
-      return std::unique_ptr<State>(new MPGEnvironmentState(*this));
+        std::unique_ptr<State> clone(new MPGEnvironmentState(*this, Cloner));
+      return clone;
     }
 
-    MPGEnvironmentState::MPGEnvironmentState(std::shared_ptr<const Game> game, std::shared_ptr<Environment> environment):State(std::move(game)),
-                                                                                                            environment(std::move(environment)),
-                                                                                                              current_player_(0),
-                                                                                                              num_moves_(0),
-                                                                                                              mean_payoff(0)
+    MPGEnvironmentState::MPGEnvironmentState(std::shared_ptr<const Game> game,
+                                             std::shared_ptr<Environment> environment_):State(std::move(game)), environment(std::move(environment_)),
+                                             current_player_(0), num_moves_(0), mean_payoff(0)
      {
         current_state=this->environment->starting_state;
         state_history={current_state};
+        visits_per_player[PlayerIdentifier::kMinPlayer].resize(environment->GraphSize(), 0);
+        visits_per_player[PlayerIdentifier::kMaxPlayer].resize(environment->GraphSize(), 0);
      }
 
     WeightType MPGEnvironmentState::GetMeanPayoff() const {
@@ -319,6 +352,20 @@ namespace open_spiel::mpg {
     NodeType MPGEnvironmentState::GetCurrentState() const {
         return current_state;
     }
+
+    int MPGEnvironmentState::GraphSize() const {
+        return environment->GraphSize();
+    }
+
+    std::vector<std::vector<int>> MPGEnvironmentState::ObservationTensorsShapeList() const
+    {
+        auto environment_shape= ObservationEnvironmentTensorShape();
+        return {
+                std::vector<int>(environment_shape.begin(), environment_shape.end()),
+                {1}
+                };
+    }
+
 
     std::string MPGMetaGame::ActionToString(Player player,
                                             Action action_id) const
@@ -345,13 +392,28 @@ namespace open_spiel::mpg {
         return std::make_unique<MPGEnvironmentState>(shared_from_this(),last_environment);
     }
 
-    Game::TensorShapeSpecs MPGMetaGame::ObservationTensorShapeSpecs() const {
-        return Game::TensorShapeSpecs::kNestedList;
+    TensorShapeSpecs MPGMetaGame::ObservationTensorShapeSpecs() const {
+        return TensorShapeSpecs::kNestedList;
     }
 
     int MPGMetaGame::MaxGameLength() const
     {
-        return game_parameters_.at("max_moves").int_value();
+        class Inf_t
+                {
+                public:
+                    Inf_t()=default;
+                    bool operator<(const Inf_t& other) const
+                    {
+                        return false;
+                    }
+                } Inf{};
+        using ClosureType=std::variant<int, Inf_t>;
+        ClosureType max_length(Inf);
+        if(game_parameters_.count("max_moves"))
+            max_length= std::min<ClosureType >(max_length, game_parameters_.at("max_moves").int_value());
+        if(game_parameters_.count("max_repeats"))
+            max_length= std::min<ClosureType >(max_length, 2*game_parameters_.at("max_repeats").int_value()*MaxGraphSize());
+        return max_length.index()==0?std::get<int>(max_length):std::numeric_limits<int>::max();
     }
 
     int MPGMetaGame::MaxGraphSize() const {
@@ -365,6 +427,16 @@ namespace open_spiel::mpg {
     std::shared_ptr<Environment> MPGMetaGame::GetLastEnvironment() const {
         absl::MutexLock lock(&environment_mutex);
         return last_environment;
+    }
+
+    std::array<int,3> MPGEnvironmentState::ObservationEnvironmentTensorShape() const {
+        if(game_->GetParameters().count("padding") && game_->GetParameters().at("padding").bool_value())
+        {
+            auto mpg_game_= dynamic_cast<const MPGMetaGame *>(game_.get());
+            return {mpg_game_->MaxGraphSize(),mpg_game_->MaxGraphSize(),2};
+        }
+        else
+            return {GraphSize(),GraphSize(),2};
     }
 
 
@@ -418,6 +490,10 @@ namespace open_spiel::mpg {
 
     Environment::Environment(WeightedGraphType graph, NodeType starting_state) : graph(std::move(graph)), starting_state(starting_state)
     {
+    }
+
+    int Environment::GraphSize() const {
+        return graph.size();
     }
 
 }  // namespace open_spiel

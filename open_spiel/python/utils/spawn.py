@@ -24,7 +24,7 @@ Empty = queue.Empty
 # https://github.com/pytest-dev/pytest-flask/issues/104#issuecomment-577908228
 # and for more details see
 # https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
-multiprocessing.set_start_method("fork")
+open_spiel_context=multiprocessing.get_context("fork")
 
 
 # For compatibility so that it works inside Google.
@@ -47,12 +47,12 @@ class Process(object):
     elif "queue" in kwargs:
       raise ValueError("`queue` is reserved for use by `Process`.")
 
-    q1 = multiprocessing.Queue()
-    q2 = multiprocessing.Queue()
+    q1 = open_spiel_context.Queue()
+    q2 = open_spiel_context.Queue()
     self._queue = _ProcessQueue(q1, q2)
     kwargs["queue"] = _ProcessQueue(q2, q1)
 
-    self._process = multiprocessing.Process(
+    self._process = open_spiel_context.Process(
         target=target, args=args, kwargs=kwargs)
     self._process.start()
 

@@ -10,6 +10,16 @@ if (OPEN_SPIEL_BUILD_WITH_BOOST)
     mpg/string_compress.cc
     mpg/bots.cc
     mpg/bots.h
+      mpg/generator/environment.cc
+        mpg/generator/environment.h
+        mpg/generator/graph.cc
+        mpg/generator/graph.h
+        mpg/generator/meta_factory.cc
+        mpg/generator/meta_factory.h
+        mpg/generator/choice.h
+        mpg/generator/choice.cc
+        mpg/generator/weight.cc
+        mpg/generator/weight.h
          PARENT_SCOPE )
 
   set( BOOST_DEPENDENCIES

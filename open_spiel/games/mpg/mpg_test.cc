@@ -22,7 +22,7 @@ namespace open_spiel::mpg
         namespace testing = open_spiel::testing;
         void BasicMPGTests()
         {
-          testing::LoadGameTest("mpg(max_moves=20,max_size=20,generator=gnp,generator_params=20 0.5 -1 1)");
+          testing::LoadGameTest("mpg(max_moves=20,max_size=20,generator=usgnp,generator_params=20 100 0.1 0.5 -1 1)");
           testing::NoChanceOutcomesTest(*LoadGame("mpg(max_moves=20,max_size=20,generator=gnp,generator_params=20 0.5 -1 1)"));
           testing::RandomSimTest(*LoadGame("mpg(max_moves=20,max_size=20,generator=gnp,generator_params=20 0.5 -1 1)"), 100);
         }
