@@ -14,7 +14,7 @@ import open_spiel.python.algorithms.alpha_zero_mpg.utils as mpg_utils
 def make_discovery_directory(config):
     discovery_dir = os.path.join(config.path, "services")
     os.makedirs(discovery_dir, exist_ok=True)
-    for service in ["actors", "learner", "evaluators"]:
+    for service in ["actor", "learner", "evaluator"]:
         service_dir = os.path.join(discovery_dir, service)
         os.makedirs(service_dir, exist_ok=True)
     return discovery_dir
@@ -57,6 +57,7 @@ class AlphaZeroService(fastapi.FastAPI):
         make_discovery_directory(config)
         self.working_directory = os.path.join(self.services_path, service_type,socket.gethostname())
         os.makedirs(self.working_directory, exist_ok=True)
+        config.working_directory = self.working_directory
 
     @property
     def services_path(self):

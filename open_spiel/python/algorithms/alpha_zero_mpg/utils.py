@@ -262,9 +262,11 @@ class Config(collections.namedtuple(
 class Trajectory(object):
     """A sequence of observations, actions and policies, and the outcomes."""
 
-    def __init__(self):
+    def __init__(self,graph_size:int=None,edges_count:int=None):
         self.states = []
         self.returns = None
+        self.graph_size=graph_size
+        self.edges_count=edges_count
 
     def add(self, information_state, action, policy):
         self.states.append((information_state, action, policy))
@@ -277,12 +279,12 @@ def is_mcts_bot(bot):
 
 def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_environment=False):
     """Play one game, return the trajectory."""
-    trajectory = Trajectory()
     actions = []
     if fix_environment:
         state = game.new_initial_state()
     else:
         state = game.new_initial_environment_state()
+    trajectory = Trajectory(edges_count=state.count_edges(),graph_size=state.graph_size())
     random_state = np.random.RandomState()
     logger.opt_print(" Starting game {} ".format(game_num).center(60, "-"))
     logger.opt_print("Initial state:\n{}".format(state))
@@ -429,3 +431,12 @@ def compatibility_mode(config):
 INPUT_NAMES=("environment","state")
 OUTPUT_NAMES=("value","policy")
 TRAIN_NAMES=("environment","state","value","policy")
+
+
+def get_winner_name(mean_payoff) -> str:
+    if mean_payoff > 0:
+        return "Max"
+    elif mean_payoff < 0:
+        return "Min"
+    else:
+        return "Draw"

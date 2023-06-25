@@ -4,6 +4,8 @@ import traceback
 import datetime
 from typing import TypedDict, Union, List
 
+import numpy as np
+
 from ..multiprocess import queue as queue_lib
 
 from open_spiel.python.algorithms.alpha_zero_mpg import utils
@@ -14,11 +16,12 @@ from open_spiel.python.algorithms.alpha_zero_mpg.mcts import guide as mcts_guide
 from open_spiel.python.algorithms.alpha_zero_mpg import resource, bots as bots_lib
 
 
-class GameStats(TypedDict):
-    winner: Union[int, None]
+class SelfPlayingGameStats(TypedDict):
+    winner: Union[str, None]
     num_steps: int
-    start_time: datetime.datetime
-    end_time: datetime.datetime
+    graph_size: int
+    edges_count: int
+
 
 
 class ActorStats(TypedDict):
@@ -26,7 +29,7 @@ class ActorStats(TypedDict):
     start_time: datetime.datetime
     end_time: datetime.datetime
     num_games: int
-    games: List[GameStats]
+    games: List[SelfPlayingGameStats]
     pass
 
 
@@ -39,11 +42,12 @@ class Actor(utils.Watched):
 
 
 class MultiProcActor(Actor):
-    def __init__(self, config, num=None, name=None, **kwargs):
+    def __init__(self, config, num=None, name=None,seed=None, **kwargs):
         super().__init__(config, num, name, **kwargs)
         # Time resolution in seconds for updating the actor's state.
         self.stats_frequency = config.services.actors.stats_frequency or config.stats_frequency or 60
         self._stats = None
+        self.rng=np.random.RandomState(seed)
         pass
 
     @property
@@ -107,14 +111,15 @@ class MultiProcActor(Actor):
             if is_updated:
                 logger.print("Updated model, new hash is {}.".format(model.hash()))
 
-            game_start_time = datetime.datetime.now()
             message_data = utils.play_game(logger, game_num, game, bots, config.temperature,
                                            config.temperature_drop, fix_environment=config.fix_environment)
-            game_end_time = datetime.datetime.now()
             self._stats["num_games"] += 1
-            game_stats: GameStats = {"winner": self._sign(message_data.returns[0]),
-                                     "num_steps": len(message_data.states),
-                                     "start_time": game_start_time, "end_time": game_end_time}
+            game_stats: SelfPlayingGameStats = {
+                "winner": utils.get_winner_name(message_data.returns[0]),
+                "num_steps": len(message_data.states),
+                "graph_size": message_data.graph_size,
+                "edges_count": message_data.edges_count
+                                     }
             self._stats["games"].append(game_stats)
             queue.put(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_MESSAGE, message_data))
         # Close the queue

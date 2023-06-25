@@ -38,6 +38,10 @@ class Service(abc.ABC):
     def json(self):
         pass
 
+    @abc.abstractmethod
+    def health(self):
+        pass
+
 
 class ServiceNode(Service):
     def __init__(self,config,hostname:str,port:int):
@@ -73,7 +77,7 @@ class ServiceNode(Service):
     def start(self):
         response=requests.post(f"http://{self.hostname}:{self.port}/start",timeout=self.timeout)
         if response.status_code != http.HTTPStatus.OK:
-            raise ValueError(f"Could not start {self.hostname}:{self.port}")
+            raise ValueError(f"Could not start {self.hostname}:{self.port}. Status code: {response.status_code}")
         return response.json()
 
     @property
@@ -85,6 +89,13 @@ class ServiceNode(Service):
             "hostname":self.hostname,
             "port":self.port
         }
+
+    def health(self):
+        response=requests.get(f"http://{self.hostname}:{self.port}/health",timeout=self.timeout)
+        if response.status_code != http.HTTPStatus.OK:
+            return health_dto.NodeHealthResponse(timestamp=format_date(datetime.datetime.now()),hostname=self.hostname,threads=None,
+                                                    status=response.status_code)
+        health_dto.NodeHealthResponse(**response.json(),status=response.status_code)
 
 class ServiceCluster(Service):
     def __init__(self,services:List[Service],name:str):
@@ -122,3 +133,6 @@ class ServiceCluster(Service):
 
     def children(self):
         yield from self.services
+
+    def health(self):
+        return [service.health() for service in self.services]

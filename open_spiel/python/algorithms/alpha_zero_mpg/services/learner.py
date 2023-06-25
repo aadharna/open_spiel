@@ -126,7 +126,7 @@ class Learner(utils.Watched):
             if config.max_steps > 0 and step >= config.max_steps:
                 break
 
-            self.model_broadcaster.broadcast(save_path)
+            self.model_broadcaster(save_path)
 
 
 @watcher

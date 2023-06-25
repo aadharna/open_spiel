@@ -14,12 +14,12 @@ from open_spiel.python.algorithms.alpha_zero_mpg import resource, utils, bots as
 
 
 class EvaluationGameStats(TypedDict):
-    winner: Union[int, None]
+    winner: Union[str, None]
     num_steps: int
-    start_time: datetime.datetime
-    end_time: datetime.datetime
     player_max: str
     player_min: str
+    graph_size: int
+    edges_count: int
     # The relative difficulty of the games. This is ratio between the maximum simulation of the opponent with respect to alpha zerp.
     # None if the opponent is not mcts.
     relative_difficulty: Union[float, None]
@@ -41,12 +41,12 @@ class Evaluator(utils.Watched):
 
 
 class MultiProcEvaluator(Evaluator):
-    def __init__(self, config, num=None, opponent="mcts", name=None, **kwargs):
+    def __init__(self, config, num=None, opponent="mcts", name=None,seed=None, **kwargs):
         super().__init__(config, num, name, **kwargs)
         self.opponent = opponent
         self.stats_frequency = config.services.evaluators.stats_frequency or config.stats_frequency or 60
         self._stats = None
-
+        self.rng=np.random.RandomState(seed)
         pass
 
     @property
@@ -139,14 +139,8 @@ class MultiProcEvaluator(Evaluator):
             game_stats["player_max"] = bot_names[0]
             game_stats["player_min"] = bot_names[1]
 
-            start_time = datetime.datetime.now()
             trajectory = utils.play_game(logger, game_num, game, bots, temperature=1,
                                          temperature_drop=0, fix_environment=config.fix_environment)
-            end_time = datetime.datetime.now()
-            # Set game time stats
-            game_stats["start_time"] = start_time
-            game_stats["end_time"] = end_time
-
             # Set game results
             results.append(trajectory.returns[az_player])
 
@@ -154,8 +148,10 @@ class MultiProcEvaluator(Evaluator):
             queue.put((difficulty, trajectory.returns[az_player]))
 
             # Update stats
-            game_stats["winner"] = self._sign(trajectory.returns[0])
+            game_stats["winner"] = utils.get_winner_name(trajectory.returns[0])
             game_stats["num_steps"] = len(trajectory.states)
+            game_stats["graph_size"] = trajectory.graph_size
+            game_stats["edges_count"] = trajectory.edges_count
             self._stats["games"].append(EvaluationGameStats(**game_stats))
             self._stats["num_games"] += 1
 

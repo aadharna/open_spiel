@@ -439,6 +439,10 @@ namespace open_spiel::mpg {
             return {GraphSize(),GraphSize(),2};
     }
 
+    int MPGEnvironmentState::CountEdges() const {
+        return environment->CountEdges();
+    }
+
 
     WeightedGraphType WeightedGraphType::dual() const
     {
@@ -494,6 +498,10 @@ namespace open_spiel::mpg {
 
     int Environment::GraphSize() const {
         return graph.size();
+    }
+
+    int Environment::CountEdges() const {
+        return std::accumulate(graph.begin(),graph.end(),0,[](int acc, const auto& adjList){return acc+adjList.size();});
     }
 
 }  // namespace open_spiel

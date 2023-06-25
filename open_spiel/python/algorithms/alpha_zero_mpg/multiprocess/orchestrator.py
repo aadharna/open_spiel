@@ -203,7 +203,7 @@ class PeriodicThread(threading.Thread):
 
 class ActorsGrpcOrchestrator(ProcessOrchestrator):
 
-    def __init__(self, actors: List[spawn.Process], config, max_game_length: int):
+    def __init__(self, actors: List[spawn.Process], config, max_game_length: int,*,working_directory: str = None):
         super().__init__(actors)
         server_address = config.replay_buffer.implementation.address
         server_port = config.replay_buffer.implementation.port
@@ -214,7 +214,7 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
         request_length = config.services.actors.request_length
         max_collection_time = config.services.actors.max_collection_time
         stats_frequency = config.services.actors.stats_frequency
-        stats_file = config.services.actors.stats_basename
+
         collection_period = config.services.actors.collection_period
         self.collector = ProcessesTrajectoryCollector(actors, max_game_length=max_game_length,
                                                       learn_rate=request_length, block_until_ready=False)
@@ -228,12 +228,17 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
         self._stop_request = False
         self.max_collection_time = max_collection_time
         self.stats_frequency = stats_frequency
+        stats_file = config.services.evaluators.stats_file
         if stats_file is None:
-            stats_file = "actor"
-        self.stats_file = os.path.join(config.path, f"{stats_file}_{socket.gethostname()}.json")
+            stats_file = "actor-stats.jsonl"
+
+        self.working_directory = working_directory or config.path
+        self.stats_file = os.path.join(self.working_directory, stats_file)
+
         self.stats_save_thread = PeriodicThread(self.stats_frequency, self.save_stats)
         self.stats_save_thread.start()
         self.request_length = request_length
+        self.collection_period = collection_period
         if collection_period is not None:
             self.collection_thread = PeriodicThread(collection_period, self.collect)
             self.collection_thread.start()
@@ -249,7 +254,7 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
         with open(self.stats_file, "a") as file:
             json.dump(self.collector.stats, file, default=utils.json_serializer)
             # Add a comma to separate the json objects
-            file.write(",\n")
+            file.write("\n")
 
     def collect(self):
         start_time = None
@@ -295,11 +300,11 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
 
 
 class EvaluatorOrchestrator(ProcessOrchestrator):
-    def __init__(self, evaluators: List[spawn.Process], config, max_game_length: int):
+    def __init__(self, evaluators: List[spawn.Process], config, max_game_length: int,*,working_directory=None):
         super().__init__(evaluators)
         max_collection_time = config.services.evaluators.max_collection_time
         stats_frequency = config.services.evaluators.stats_frequency
-        stats_file = config.services.evaluators.stats_basename
+        stats_file = config.services.evaluators.stats_file
 
         self.collector = ProcessesTrajectoryCollector(evaluators, max_game_length=max_game_length, learn_rate=1,
                                                       block_until_ready=False)
@@ -309,8 +314,10 @@ class EvaluatorOrchestrator(ProcessOrchestrator):
         self.stats_frequency = stats_frequency
         if stats_file is None:
             stats_file = "evaluator"
-        self.stats_file = os.path.join(config.path, f"{stats_file}_{socket.gethostname()}.json")
+        self.working_directory = working_directory or config.path
+        self.stats_file = os.path.join(self.working_directory, stats_file)
         self.stats_save_thread = PeriodicThread(self.stats_frequency, self.save_stats)
+        self.stats_save_thread.start()
 
     def _time_to_stop(self, start_time):
         if self.max_collection_time is None:
@@ -333,6 +340,7 @@ class EvaluatorOrchestrator(ProcessOrchestrator):
         pass
 
     def stop(self):
+        self.broadcast(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_CLOSE, None))
         self._stop_request = True
         pass
 

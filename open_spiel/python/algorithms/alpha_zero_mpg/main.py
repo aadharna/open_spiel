@@ -77,7 +77,7 @@ def alpha_zero(config: Config):
 
     print("Starting game", complete_game)
     if game.num_players() != 2:
-        sys.exit("AlphaZero can on²ly handle 2-player games.")
+        sys.exit("AlphaZero can only handle 2-player games.")
     game_type = game.get_type()
     if game_type.reward_model != pyspiel.GameType.RewardModel.TERMINAL:
         raise ValueError("Game must have terminal rewards.")
