@@ -299,7 +299,7 @@ def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_e
         else:
             if is_mcts_bot(bots[state.current_player()]):
                 root = bots[state.current_player()].mcts_search(state)
-                policy = np.zeros(game.num_distinct_actions())
+                policy = np.zeros(state.graph_size())
                 for c in root.children:
                     policy[c.action] = c.explore_count
                 policy = policy ** (1 / temperature)
@@ -309,15 +309,15 @@ def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_e
                 else:
                     action = np.random.choice(len(policy), p=policy)
                 trajectory.states.append(
-                    TrajectoryState(*nested_reshape(state.observation_tensor(), game.observation_tensor_shapes_list()),
+                    TrajectoryState(*nested_reshape(state.observation_tensor(), state.observation_tensor_shapes_list()),
                                     state.current_player(),
                                     action, policy, root.total_reward / root.explore_count))
             else:
                 action = bots[state.current_player()].step(state)
-                policy = np.zeros(game.num_distinct_actions())
+                policy = np.zeros(state.graph_size())
                 policy[action] = 1
                 trajectory.states.append(
-                    TrajectoryState(*nested_reshape(state.observation_tensor(), game.observation_tensor_shapes_list()),
+                    TrajectoryState(*nested_reshape(state.observation_tensor(), state.observation_tensor_shapes_list()),
                                     state.current_player(),
                                     action, policy, value=None))
             action_str = state.action_to_string(state.current_player(), action)

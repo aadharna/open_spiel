@@ -10,8 +10,8 @@ game:
     max_repeats: 3
     max_size: 20
     generator:
-        name: "gnp"
-        params: [20, 0.1 -1, 1, 39]
+        name: "usgnp"
+        params: [17, 17, 0.1, 1, -1, 1, 39]
     fix_environment: false #Whether to fix the environment or not
 
 model: #Model configuration
@@ -49,7 +49,7 @@ replay_buffer:
         remover:
             name: "fifo" # one of "random" or "fifo", "lifo", "priority"
             params: [] # Additional parameters for the remover
-        min_size: 1024 # minimum number of elements in the buffer before sampling
+        min_size: 100 # minimum number of elements in the buffer before sampling
         max_in_flight_samples_per_worker: 192 # maximum number of samples that can be in flight per worker
 
 services:
@@ -67,7 +67,7 @@ services:
 #                  name: "mpg"
 #                  max_moves: 100
         port: 8001 # Port to use for the actors
-        stats_file: stats.ndjson # Base name of the file to store the statistics of the actors
+        stats_file: stats.jsonl # Base name of the file to store the statistics of the actors
         # The file will be named as <stats_basename>.<instance_id>.json
         stats_frequency: 100 # Frequency of the statistics collection in seconds
         max_collection_time: 100 # Maximum time to collect data in seconds. If null, data collection is run indefinitely.
@@ -77,7 +77,7 @@ services:
     evaluators:
         instances: 3
         port: 8002 # Port to use for the evaluators
-        stats_file: stats.ndjson # Base name of the file to store the statistics of the evaluators
+        stats_file: stats.jsonl # Base name of the file to store the statistics of the evaluators
         # The file will be named as <stats_basename>.<instance_id>.json
         opponent: "random" # One of "random", "mcts", "greedy"
         stats_frequency: 100 # Frequency of the statistics collection in seconds

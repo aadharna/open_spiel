@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """An MCTS Evaluator for an AlphaZero model."""
+import enum
 from typing import List, Callable, Union, Iterable
 
 import numpy as np
@@ -28,17 +29,25 @@ from .utils import FloatArrayLikeType
 from .. import resource
 
 
+class StateRepresentation(enum.Enum):
+    """State representation for AlphaZero."""
+    COMPRESSED = "compressed"
+    MINIMAL = "minimal"
+    NORMAL = "normal"
+    HASH = "hash"
+
 
 class AlphaZeroEvaluator(evaluator_lib.AlphaZeroEvaluator):
     """An AlphaZero MCTS Evaluator."""
 
-    def __init__(self, game, model, cache_size=2 ** 16):
+    def __init__(self, game, model, cache_size=2 ** 16,*, state_representation=StateRepresentation.NORMAL):
         if isinstance(model, resource.SavedModelBundle):
             self._model_bundle=model
             model=model.value
         else:
             self._model_bundle=None
         super().__init__(game, model, cache_size)
+        self.state_representation = StateRepresentation(state_representation)
 
     def cache_info(self):
         return self._cache.info()
@@ -46,13 +55,25 @@ class AlphaZeroEvaluator(evaluator_lib.AlphaZeroEvaluator):
     def clear_cache(self):
         self._cache.clear()
 
+    def _get_cache_key(self,game_state, environment_tensor, state_tensor):
+        if self.state_representation == StateRepresentation.COMPRESSED:
+            raise NotImplementedError("Compressed state representation not implemented")
+        elif self.state_representation == StateRepresentation.MINIMAL:
+            return (game_state.current_player(), int(state_tensor))
+        elif self.state_representation == StateRepresentation.NORMAL:
+            return (game_state.current_player(), environment_tensor.tobytes(), state_tensor.tobytes())
+        elif self.state_representation == StateRepresentation.HASH:
+            return (game_state.current_player(),game_state.graph_size(), hash(state_tensor))
+        else:
+            raise ValueError("Unknown state representation: {}".format(self.state_representation))
+
     def _inference(self, game_state):
         # Make a singleton batch
-        environment, state = nested_reshape(game_state.observation_tensor(), self.game.observation_tensor_shapes_list())
+        environment, state = nested_reshape(game_state.observation_tensor(), game_state.observation_tensor_shapes_list())
         environment = np.expand_dims(environment, 0)
         state = np.expand_dims(state, 0)
 
-        cache_key = (game_state.current_player(), int(state))
+        cache_key = self._get_cache_key(game_state, environment, state)
         value, policy = self._cache.make(
             cache_key, lambda: self.model.inference(environment, state))
         return value[0, 0], policy[0]  # Unpack batch
@@ -89,14 +110,17 @@ class GuidedAlphaZeroEvaluator(AlphaZeroEvaluator):
         self.policy_map=policy_map
 
     def prior(self, state):
-        payoffs=state.legal_actions_with_payoffs()
-        legal_actions=payoffs.keys()
-        _,model_prior=self._inference(state)
-        payoffs_numpy = np.zeros_like(model_prior)
-        for u in payoffs:
-            payoffs_numpy[u]=payoffs[u]
-        policy=self.policy_map(model_prior,payoffs_numpy)
-        return [(action, policy[action]) for action in legal_actions]
+        if state.is_chance_node():
+            return state.chance_outcomes()
+        else:
+            payoffs=state.legal_actions_with_payoffs()
+            legal_actions=payoffs.keys()
+            _,model_prior=self._inference(state)
+            payoffs_numpy = np.zeros_like(model_prior)
+            for u in payoffs:
+                payoffs_numpy[u]=payoffs[u]
+            policy=self.policy_map(model_prior,payoffs_numpy)
+            return [(action, policy[action]) for action in legal_actions]
 
 
 class StochasticEvaluator(mcts.Evaluator):

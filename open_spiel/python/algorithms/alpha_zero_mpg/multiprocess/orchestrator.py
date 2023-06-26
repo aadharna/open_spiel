@@ -265,7 +265,7 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
             batch_size = len(train_inputs)
             # This guarantees that the inputs does not exceed the max buffer size
             for index in range((batch_size + self.request_length - 1) // self.request_length):
-                with self.client.writer(self.request_length) as writer:
+                with self.client.writer(max_sequence_length=1) as writer:
                     for train_input in train_inputs[index * self.request_length:(index + 1) * self.request_length]:
                         # The order of the keys is important
                         # It appears that the ordering of reverb is not consistent for dictionaries
