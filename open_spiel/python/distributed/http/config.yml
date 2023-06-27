@@ -6,19 +6,35 @@ specification: 2
 path: /tmp/az-test # Path to the working directory. Leave empty for a randomly generated path
 
 game:
-    name: "mpg"
+    name: "mpg" # Name of the game. Should be mpg for Mean Payoff Games
     max_repeats: 3
-    max_size: 20
+    max_size: 150
     generator:
         name: "usgnp"
-        params: [17, 17, 0.1, 1, -1, 1, 39]
+        params: [10, 150, 0.1, 1, -1, 1, 39]
     fix_environment: false #Whether to fix the environment or not
 
 model: #Model configuration
     name: "mean_payoff" #Name of the model
-    architecture: "gnn" #Architecture of the model
+    architecture: "res_gnn" #Architecture of the model
     width: 3 #Width of the model
     depth: 3 #Depth of the model
+    arguments: #Arguments for the model. The arguments are specific to the architecture
+        conv_layers: [6, 4, 1, 6, 4, 1, 6, 4]
+        fc_layers: null
+        transposed: false
+        masked_softmax: false
+        ragged_batch: false
+        random_connection_probability: 0.01 # Probability of adding a random connection
+        weight_noise_layer: null #The layer to add noise to the weights' matrix.
+        weight_normalisation: std # The type of normalisation to the graph's weight matrix. Object evaluating to false, or one of "std", "uniform", "none"
+        weight_normalisation_regularization: 0.01 # Regularization parameter for weight normalisation
+        residual_connections: {3:[0],6:[3]} # Use residual connections between layers
+        #Residual connections are defined as a dictionary of the form {layer_id: [list of layers to connect to]}
+        #The layer_id is the index of the layer in the list of layers. The layer of index 0 is the input layer.
+
+        difference_residual: false # Whether to use the difference residual or the standard residual
+        graph_normalisation: true # The graph normalisation operator to use. (None, "layernorm", "batchnorm")
 
 training:
     batch_size: 64
@@ -54,18 +70,7 @@ replay_buffer:
 
 services:
     actors:
-        instances: 3
-#        instances:
-#            - name: L1
-#              game_id: 0
-#            - name: L2
-#              game:
-#                  name: "mpg"
-#                  max_moves: 100
-#            - name: hard
-#              game:
-#                  name: "mpg"
-#                  max_moves: 100
+        instances: 6
         port: 8001 # Port to use for the actors
         stats_file: stats.jsonl # Base name of the file to store the statistics of the actors
         # The file will be named as <stats_basename>.<instance_id>.json

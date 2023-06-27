@@ -277,6 +277,12 @@ def is_mcts_bot(bot):
     return isinstance(bot, mcts.MCTSBot)
 
 
+def _game_result_from_perspective(reward,player):
+    if player==0:
+        return reward
+    else:
+        return -reward
+
 def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_environment=False):
     """Play one game, return the trajectory."""
     actions = []
@@ -310,8 +316,8 @@ def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_e
                     action = np.random.choice(len(policy), p=policy)
                 trajectory.states.append(
                     TrajectoryState(*nested_reshape(state.observation_tensor(), state.observation_tensor_shapes_list()),
-                                    state.current_player(),
-                                    action, policy, root.total_reward / root.explore_count))
+                                    state.current_player(), action, policy,
+                                    value=root.total_reward / root.explore_count))
             else:
                 action = bots[state.current_player()].step(state)
                 policy = np.zeros(state.graph_size())
@@ -386,7 +392,8 @@ def nested_dict_to_namespace(nested_dict):
     namespace = argparse.Namespace()
     if type(nested_dict) is dict:
         for key, value in nested_dict.items():
-            setattr(namespace, key, nested_dict_to_namespace(value))
+            if isinstance(key,str):
+                setattr(namespace, key, nested_dict_to_namespace(value))
 
     elif type(nested_dict) is list:
         namespace = [None]*len(nested_dict)

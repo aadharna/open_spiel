@@ -41,7 +41,7 @@ class EvaluatorApp(common.AlphaZeroService):
                                "num": i,
                                "hostname": socket.gethostname()
                                })
-                for i in range(config.services.actors.instances)
+                for i in range(config.services.evaluators.instances)
             ]
             pass
 

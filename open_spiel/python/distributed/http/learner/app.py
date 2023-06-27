@@ -77,11 +77,11 @@ class LearnerApp(common.AlphaZeroService):
         self.evaluators = []
         for actor_hostname in os.listdir(os.path.join(app.services_path, "actor")):
             app.actors.append(service_node.ServiceNode(config=self.config, hostname=actor_hostname,
-                                                       port=self.config.services.actors.port))
+                                                       port=self.config.services.actors.port,skip_dead=True))
         self.actors_cluster = service_node.ServiceCluster(self.actors, name="actor")
         for evaluator_hostname in os.listdir(os.path.join(self.services_path, "evaluator")):
             self.evaluators.append(service_node.ServiceNode(config=self.config, hostname=evaluator_hostname,
-                                                            port=self.config.services.evaluators.port))
+                                                            port=self.config.services.evaluators.port,skip_dead=True))
         self.evaluators_cluster = service_node.ServiceCluster(self.evaluators, name="evaluator")
         self.cluster = service_node.ServiceCluster([self.actors_cluster, self.evaluators_cluster], name="cluster")
         return self.cluster.json()
@@ -91,14 +91,7 @@ class LearnerApp(common.AlphaZeroService):
         return self._started
 
     def broadcast_model(self, model_path):
-        for node in self.actors_cluster.children():
-            requests.post(f"http://{node.identifier}:{self.config.services.actors.port}/model",
-                          json={"path": model_path},
-                          timeout=self.config.services.timeout)
-        for node in self.evaluators_cluster.children():
-            requests.post(f"http://{node.identifier}:{self.config.services.evaluators.port}/model",
-                          json={"path": model_path},
-                          timeout=self.config.services.timeout)
+        self.cluster.post("/model", data={"path": model_path})
 
 
 app = LearnerApp()

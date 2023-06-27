@@ -42,13 +42,45 @@ class Service(abc.ABC):
     def health(self):
         pass
 
+    @abc.abstractmethod
+    def post(self,endpoint:str,data):
+        pass
+
+
+    @abc.abstractmethod
+    def get(self,endpoint:str):
+        pass
+
+    @abc.abstractmethod
+    def put(self,endpoint:str,data):
+        pass
+
+    @abc.abstractmethod
+    def delete(self,endpoint:str):
+        pass
+
+    @abc.abstractmethod
+    def patch(self,endpoint:str,data):
+        pass
+
+    @abc.abstractmethod
+    def options(self,endpoint:str):
+        pass
+
+    @abc.abstractmethod
+    def head(self,endpoint:str):
+        pass
+
+
 
 class ServiceNode(Service):
-    def __init__(self,config,hostname:str,port:int):
+    def __init__(self,config,hostname:str,port:int,*,skip_dead:bool=False):
         self.hostname = hostname
         self.port = port
         self.config=config
         self.timeout=config.services.timeout
+        self._alive=True
+        self.skip_dead=skip_dead
 
     def heartbeat(self):
         response=requests.get(f"http://{self.hostname}:{self.port}/heartbeat",timeout=self.timeout)
@@ -64,21 +96,27 @@ class ServiceNode(Service):
 
     def get_model(self):
         response=requests.get(f"http://{self.hostname}:{self.port}/model",timeout=1)
-        if response.status_code != http.HTTPStatus.OK:
+        if response is None or response.status_code != http.HTTPStatus.OK:
             raise ValueError(f"Could not get model from {self.hostname}:{self.port}")
         return response.json()
 
     def stop(self):
-        response=requests.post(f"http://{self.hostname}:{self.port}/stop",timeout=self.timeout)
-        if response.status_code != http.HTTPStatus.OK:
+        response=self.post("/stop",{})
+        if response is None:
+            return {"status":"dead"}
+        elif response.status_code != http.HTTPStatus.OK:
             raise ValueError(f"Could not stop {self.hostname}:{self.port}")
         return response.json()
 
     def start(self):
-        response=requests.post(f"http://{self.hostname}:{self.port}/start",timeout=self.timeout)
-        if response.status_code != http.HTTPStatus.OK:
+        response=self.post("/start",{})
+        if response is None:
+            return {"status":"dead","name":self.hostname}
+        elif response.status_code != http.HTTPStatus.OK:
             raise ValueError(f"Could not start {self.hostname}:{self.port}. Status code: {response.status_code}")
-        return response.json()
+        json_response=response.json()
+        json_response["name"]=self.hostname
+        return json_response
 
     @property
     def identifier(self):
@@ -96,6 +134,98 @@ class ServiceNode(Service):
             return health_dto.NodeHealthResponse(timestamp=format_date(datetime.datetime.now()),hostname=self.hostname,threads=None,
                                                     status=response.status_code)
         health_dto.NodeHealthResponse(**response.json(),status=response.status_code)
+
+    def post(self,endpoint,data):
+        if endpoint.startswith("/"):
+            endpoint=endpoint[1:]
+        if self.skip_dead and not self._alive:
+            return None
+        try:
+            response=requests.post(f"http://{self.hostname}:{self.port}/{endpoint}",json=data,timeout=self.timeout)
+            self._alive=True
+        except requests.exceptions.ConnectionError as e:
+            self._alive=False
+            return
+        return response
+
+    def get(self,endpoint):
+        if endpoint.startswith("/"):
+            endpoint=endpoint[1:]
+        if self.skip_dead and not self._alive:
+            return None
+        try:
+            response=requests.get(f"http://{self.hostname}:{self.port}/{endpoint}",timeout=self.timeout)
+            self._alive=True
+        except requests.exceptions.ConnectionError as e:
+            self._alive=False
+            return
+        return response
+
+    def put(self,endpoint,data):
+        if endpoint.startswith("/"):
+            endpoint=endpoint[1:]
+        if self.skip_dead and not self._alive:
+            return None
+        try:
+            response=requests.put(f"http://{self.hostname}:{self.port}/{endpoint}",json=data,timeout=self.timeout)
+            self._alive=True
+        except requests.exceptions.ConnectionError as e:
+            self._alive=False
+            return
+        return response
+
+    def delete(self,endpoint):
+        if endpoint.startswith("/"):
+            endpoint=endpoint[1:]
+        if self.skip_dead and not self._alive:
+            return None
+        try:
+            response=requests.delete(f"http://{self.hostname}:{self.port}/{endpoint}",timeout=self.timeout)
+            self._alive=True
+        except:
+            self._alive=False
+            return
+        return response
+
+    def patch(self,endpoint,data):
+        if endpoint.startswith("/"):
+            endpoint=endpoint[1:]
+        if self.skip_dead and not self._alive:
+            return None
+        try:
+            response=requests.patch(f"http://{self.hostname}:{self.port}/{endpoint}",json=data,timeout=self.timeout)
+            self._alive=True
+        except requests.exceptions.ConnectionError as e:
+            self._alive=False
+            return
+        return response
+
+    def options(self,endpoint):
+        if endpoint.startswith("/"):
+            endpoint=endpoint[1:]
+        if self.skip_dead and not self._alive:
+            return None
+        try:
+            response=requests.options(f"http://{self.hostname}:{self.port}/{endpoint}",timeout=self.timeout)
+            self._alive=True
+        except requests.exceptions.ConnectionError as e:
+            self._alive=False
+            return
+        return response
+
+    def head(self,endpoint):
+        if endpoint.startswith("/"):
+            endpoint=endpoint[1:]
+        if self.skip_dead and not self._alive:
+            return None
+        try:
+            response=requests.head(f"http://{self.hostname}:{self.port}/{endpoint}",timeout=self.timeout)
+            self._alive=True
+        except requests.exceptions.ConnectionError as e:
+            self._alive=False
+            return
+        return response
+
 
 class ServiceCluster(Service):
     def __init__(self,services:List[Service],name:str):
@@ -119,7 +249,10 @@ class ServiceCluster(Service):
         return self.services_map.keys()
 
     def start(self):
-        return [service.start() for service in self.services]
+        json_responses={}
+        json_responses["name"]=self.name
+        json_responses["services"]=[service.start() for service in self.services]
+        return json_responses
 
     @property
     def identifier(self):
@@ -131,8 +264,53 @@ class ServiceCluster(Service):
             "services":[service.json() for service in self.services]
         }
 
+
     def children(self):
         yield from self.services
 
     def health(self):
-        return [service.health() for service in self.services]
+        json_response={}
+        json_response["name"]=self.name
+        json_response["services"]=[service.health() for service in self.services]
+        return json_response
+
+    def post(self,endpoint,data):
+        json_response={}
+        json_response["name"]=self.name
+        json_response["services"]=[service.post(endpoint,data) for service in self.services]
+        return json_response
+
+    def get(self,endpoint):
+        json_response={}
+        json_response["name"]=self.name
+        json_response["services"]=[service.get(endpoint) for service in self.services]
+        return json_response
+
+    def put(self,endpoint,data):
+        json_response={}
+        json_response["name"]=self.name
+        json_response["services"]=[service.put(endpoint,data) for service in self.services]
+        return json_response
+
+    def delete(self,endpoint):
+        json_response={}
+        json_response["name"]=self.name
+        json_response["services"]=[service.delete(endpoint) for service in self.services]
+
+    def patch(self,endpoint,data):
+        json_response={}
+        json_response["name"]=self.name
+        json_response["services"]=[service.patch(endpoint,data) for service in self.services]
+        return json_response
+
+    def options(self,endpoint):
+        json_response={}
+        json_response["name"]=self.name
+        json_response["services"]=[service.options(endpoint) for service in self.services]
+        return json_response
+
+    def head(self,endpoint):
+        json_response={}
+        json_response["name"]=self.name
+        json_response["services"]=[service.head(endpoint) for service in self.services]
+        return json_response
