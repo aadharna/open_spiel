@@ -35,6 +35,7 @@ model: #Model configuration
 
         difference_residual: false # Whether to use the difference residual or the standard residual
         graph_normalisation: true # The graph normalisation operator to use. (None, "layernorm", "batchnorm")
+        vacuous_connections: true # Whether to add vacuous connections or not
 
 training:
     batch_size: 64
