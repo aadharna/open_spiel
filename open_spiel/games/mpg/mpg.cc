@@ -443,6 +443,10 @@ namespace open_spiel::mpg {
         return environment->CountEdges();
     }
 
+    std::optional<WeightType> MPGEnvironmentState::GetPayoff(NodeType u, NodeType v) const {
+        return environment->GetPayoff(u,v);
+    }
+
 
     WeightedGraphType WeightedGraphType::dual() const
     {
@@ -503,5 +507,19 @@ namespace open_spiel::mpg {
     int Environment::CountEdges() const {
         return std::accumulate(graph.begin(),graph.end(),0,[](int acc, const auto& adjList){return acc+adjList.size();});
     }
+
+    std::optional<WeightType> Environment::GetPayoff(NodeType u, NodeType v) const {
+        auto it=graph[u].find(v);
+        if(it==graph[u].end())
+            return std::nullopt;
+        else
+            return it->second;
+    }
+
+    [[nodiscard]] NodeType MPGEnvironmentState::CurrentState() const
+    {
+        return current_state;
+    }
+
 
 }  // namespace open_spiel

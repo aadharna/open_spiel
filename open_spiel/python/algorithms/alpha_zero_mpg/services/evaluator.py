@@ -72,7 +72,8 @@ class MultiProcEvaluator(Evaluator):
         model = resource.SavedModelBundle(logger, config, game)
         logger.print("Initializing bots")
         guide = mcts_guide.LinearGuide(t=0.3, payoffs_prior=mcts_guide.PayoffsSoftmaxPrior())
-        az_evaluator = mcts_evaluator.GuidedAlphaZeroEvaluator(game, model, guide)
+        #az_evaluator = mcts_evaluator.GuidedAlphaZeroEvaluator(game, model, guide)
+        az_evaluator = mcts_evaluator.AlphaZeroEvaluator(game, model)
         random_evaluator = mcts.RandomRolloutEvaluator()
         self._reset_stats()
         for game_num in itertools.count():

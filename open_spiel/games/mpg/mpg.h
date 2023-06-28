@@ -94,6 +94,7 @@ namespace open_spiel::mpg
 
         [[nodiscard]] int GraphSize() const;
         [[nodiscard]] int CountEdges() const;
+        [[nodiscard]] std::optional<WeightType> GetPayoff(NodeType u, NodeType v) const;
     };
 
     using AdjacencyPayoffsType = std::map<NodeType,WeightType> ;
@@ -143,6 +144,8 @@ namespace open_spiel::mpg
 
         std::vector<std::vector<int>> ObservationTensorsShapeList() const override;
         int CountEdges() const;
+        [[nodiscard]] std::optional<WeightType> GetPayoff(NodeType u, NodeType v) const;
+        [[nodiscard]] NodeType CurrentState() const;
 
     protected:
       inline static constexpr class Clone_t{} Cloner{};

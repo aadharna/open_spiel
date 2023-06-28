@@ -41,7 +41,8 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
         pass
 
     def __init__(self, processes: List[spawn.Process], stage_count: int = None, max_game_length=None, learn_rate=None,
-                 wait_duration: float = 0.01, block_until_ready: bool = False):
+                 wait_duration: float = 0.01, block_until_ready: bool = False,sampler="trajectory",
+                 value_target=None):
         self.processes = processes
         if stage_count is None:
             stage_count = self.STAGE_COUNT_DEFAULT
@@ -58,6 +59,10 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
         self.on_heartbeat: List[Callable[[int, Any], None]] = []
         self.on_close: List[Callable[[int, Any], None]] = []
         self.on_analysis: List[Callable[[int, Any], None]] = []
+        self.sampler=sampler
+        self.value_target=value_target
+        if self.value_target not in ["winner","mean_payoff"]:
+            raise ValueError(f"value_target should be either winner or mean_payoff. Got {self.value_target}")
         pass
 
     def combiner(self):
@@ -92,6 +97,37 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
     def add_on_analysis(self, callback: Callable[[int, Any], None]):
         self.on_analysis.append(callback)
 
+    def sample_train_inputs(self,trajectory):
+        mask=np.zeros(len(trajectory.states),dtype=np.int32)
+        if self.sampler=="trajectory":
+            mask[:]=1
+        elif self.sampler=="last":
+            mask[-1]=1
+        elif self.sampler=="first":
+            mask[0]=1
+        elif self.sampler=="random":
+            mask_indexes=np.random.choice(len(trajectory.states),1,replace=False)
+            mask[mask_indexes]=1
+        elif isinstance(self.sampler,int):
+            mask_indexes=np.random.choice(len(trajectory.states),min(self.sampler,len(trajectory.states)),replace=False)
+            mask[mask_indexes]=1
+        elif isinstance(self.sampler,float):
+            indexes_count=np.random.binomial(n=len(trajectory.states),p=self.sampler)
+            mask_indexes=np.random.choice(len(trajectory.states),indexes_count,replace=False)
+            mask[mask_indexes]=1
+        else:
+            raise ValueError(f"Unknown sampler {self.sampler}")
+        states:List[utils.TrainInput]=[]
+        for index,s in enumerate(trajectory.states):
+            if mask[index]:
+                if self.value_target == "winner":
+                    valuation=trajectory.returns[0]
+                else:
+                    valuation=trajectory.mean_payoff
+                states.append(utils.TrainInput(environment=s.environment, state=s.state, value=valuation, policy=s.policy))
+        return states
+
+
     def collect(self):
         num_trajectories = 0
         num_states = 0
@@ -124,11 +160,10 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
                     callback(thread_id, message)
                 continue
 
+            #if self.sampler=="trajectory":
+
             trajectory = message
-            num_trajectories += 1
-            num_states += len(trajectory.states)
-            game_lengths.add(len(trajectory.states))
-            game_lengths_hist.add(len(trajectory.states))
+
 
             p1_outcome = trajectory.returns[0]
             if p1_outcome > 0:
@@ -138,9 +173,14 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
             else:
                 outcomes.add(2)
 
-            train_inputs.extend(
-                utils.TrainInput(environment=s.environment, state=s.state,
-                                 value=p1_outcome, policy=s.policy) for s in trajectory.states)
+            samples=self.sample_train_inputs(trajectory)
+            num_samples=len(samples)
+            train_inputs.extend(samples)
+            num_trajectories += 1
+            num_states += num_samples
+            game_lengths.add(num_samples)
+            game_lengths_hist.add(num_samples)
+
 
             for stage in range(stage_count):
                 # Scale for the length of the game
@@ -217,7 +257,8 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
 
         collection_period = config.services.actors.collection_period
         self.collector = ProcessesTrajectoryCollector(actors, max_game_length=max_game_length,
-                                                      learn_rate=request_length, block_until_ready=False)
+                                                      learn_rate=request_length, block_until_ready=False,
+                                                      sampler=config.replay_buffer.writer_sampler,value_target=config.replay_buffer.value_target)
         self.server_address = server_address
         self.server_port = server_port
         self.table = table
@@ -228,6 +269,7 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
         self._stop_request = False
         self.max_collection_time = max_collection_time
         self.stats_frequency = stats_frequency
+        self.config=config
         stats_file = config.services.evaluators.stats_file
         if stats_file is None:
             stats_file = "actor-stats.jsonl"
@@ -270,6 +312,7 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
                         # The order of the keys is important
                         # It appears that the ordering of reverb is not consistent for dictionaries
                         # This is why we use a list
+
                         train_input_dict = [
                             np.array(train_input.environment, dtype=np.float32),
                             np.array(train_input.state, dtype=np.float32),
@@ -306,8 +349,10 @@ class EvaluatorOrchestrator(ProcessOrchestrator):
         stats_frequency = config.services.evaluators.stats_frequency
         stats_file = config.services.evaluators.stats_file
 
-        self.collector = ProcessesTrajectoryCollector(evaluators, max_game_length=max_game_length, learn_rate=1,
-                                                      block_until_ready=False)
+        self.collector = ProcessesTrajectoryCollector(evaluators, max_game_length=max_game_length,
+                                                      learn_rate=1, block_until_ready=False,
+                                                      sampler=config.replay_buffer.writer_sampler,
+                                                      value_target=config.replay_buffer.value_target)
         self.config = config
         self._stop_request = False
         self.max_collection_time = max_collection_time

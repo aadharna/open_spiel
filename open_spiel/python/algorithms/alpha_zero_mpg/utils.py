@@ -267,6 +267,7 @@ class Trajectory(object):
         self.returns = None
         self.graph_size=graph_size
         self.edges_count=edges_count
+        self.mean_payoffs=None
 
     def add(self, information_state, action, policy):
         self.states.append((information_state, action, policy))
@@ -294,6 +295,8 @@ def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_e
     random_state = np.random.RandomState()
     logger.opt_print(" Starting game {} ".format(game_num).center(60, "-"))
     logger.opt_print("Initial state:\n{}".format(state))
+    game_length= 0
+    cumulative_payoffs= 0
     while not state.is_terminal():
         if state.is_chance_node():
             # For chance nodes, rollout according to chance node's probability
@@ -301,7 +304,10 @@ def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_e
             outcomes = state.chance_outcomes()
             action_list, prob_list = zip(*outcomes)
             action = random_state.choice(action_list, p=prob_list)
+            previous_node = state.current_state()
             state.apply_action(action)
+            game_length += 1
+            cumulative_payoffs += state.get_payoff(previous_node, state.current_state())
         else:
             if is_mcts_bot(bots[state.current_player()]):
                 root = bots[state.current_player()].mcts_search(state)
@@ -329,12 +335,21 @@ def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_e
             action_str = state.action_to_string(state.current_player(), action)
             actions.append(action_str)
             logger.opt_print("Player {} sampled action: {}".format(state.current_player(), action_str))
+            game_length += 1
+            cumulative_payoffs += state.get_payoff(state.current_state(), action)
             state.apply_action(action)
     logger.opt_print("Next state:\n{}".format(state))
 
+    edge_ratio=state.count_edges()/state.graph_size()**2
     trajectory.returns = state.returns()
-    logger.print("Game {}: Returns: {}; Actions: {}".format(
-        game_num, " ".join(map(str, trajectory.returns)), " ".join(actions)))
+    mean_payoff=cumulative_payoffs/game_length
+    trajectory.mean_payoffs = [mean_payoff, -mean_payoff]
+    logger.print("Game {}: Returns: {};  Mean Payoff: {}; Graph Size: {}; Edge Ratio: {}".format(
+        game_num,
+        " ".join(map(str, trajectory.returns)),
+        mean_payoff,
+        state.graph_size(),
+        edge_ratio))
     return trajectory
 
 

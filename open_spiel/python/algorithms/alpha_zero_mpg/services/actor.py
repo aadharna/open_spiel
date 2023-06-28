@@ -72,7 +72,8 @@ class MultiProcActor(Actor):
         model = resource.SavedModelBundle(logger, config, game)
         logger.print("Initializing bots")
         guide = mcts_guide.LinearGuide(t=0.3, payoffs_prior=mcts_guide.PayoffsSoftmaxPrior())
-        az_evaluator = mcts_evaluator.GuidedAlphaZeroEvaluator(game, model, guide)
+        #az_evaluator = mcts_evaluator.GuidedAlphaZeroEvaluator(game, model, guide)
+        az_evaluator = mcts_evaluator.AlphaZeroEvaluator(game, model)
         bots = [
             bots_lib.init_bot(config=config.mcts, game=game, evaluator_=az_evaluator, evaluation=False,
                               bot_type="alpha-zero"),
