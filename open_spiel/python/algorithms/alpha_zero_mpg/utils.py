@@ -268,6 +268,7 @@ class Trajectory(object):
         self.graph_size=graph_size
         self.edges_count=edges_count
         self.mean_payoffs=None
+        self.values=[]
 
     def add(self, information_state, action, policy):
         self.states.append((information_state, action, policy))
@@ -324,6 +325,7 @@ def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_e
                     TrajectoryState(*nested_reshape(state.observation_tensor(), state.observation_tensor_shapes_list()),
                                     state.current_player(), action, policy,
                                     value=root.total_reward / root.explore_count))
+                trajectory.values.append(root.total_reward / root.explore_count)
             else:
                 action = bots[state.current_player()].step(state)
                 policy = np.zeros(state.graph_size())
@@ -332,6 +334,7 @@ def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_e
                     TrajectoryState(*nested_reshape(state.observation_tensor(), state.observation_tensor_shapes_list()),
                                     state.current_player(),
                                     action, policy, value=None))
+                trajectory.values.append(None)
             action_str = state.action_to_string(state.current_player(), action)
             actions.append(action_str)
             logger.opt_print("Player {} sampled action: {}".format(state.current_player(), action_str))

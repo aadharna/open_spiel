@@ -71,9 +71,10 @@ replay_buffer:
             params: [] # Additional parameters for the remover
         min_size: 100 # minimum number of elements in the buffer before sampling
         max_in_flight_samples_per_worker: 192 # maximum number of samples that can be in flight per worker
-    value_target: winner # The objective of the game. One of "winner", "mean_payoff".
+    value_target: value # The objective of the game. One of "winner", "mean_payoff".
     # winner is the objective of determining the winner of the game
     # mean_payoff is the objective of determining the mean payoff of the game
+    # value the mcts value of the state
     writer_sampler: 0.1 # If string, one of "trajectory", "random"
     # If trajectory, the replay buffer will store entire trajectories
     # If random, the replay buffer will sample a step from a trajectory

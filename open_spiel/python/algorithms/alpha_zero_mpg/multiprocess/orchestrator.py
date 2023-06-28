@@ -61,7 +61,7 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
         self.on_analysis: List[Callable[[int, Any], None]] = []
         self.sampler=sampler
         self.value_target=value_target
-        if self.value_target not in ["winner","mean_payoff"]:
+        if self.value_target not in ["winner","mean_payoff","value"]:
             raise ValueError(f"value_target should be either winner or mean_payoff. Got {self.value_target}")
         pass
 
@@ -122,8 +122,10 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
             if mask[index]:
                 if self.value_target == "winner":
                     valuation=trajectory.returns[0]
-                else:
+                elif self.value_target== "mean_payoff":
                     valuation=trajectory.mean_payoff
+                else:
+                    valuation=trajectory.values[index]
                 states.append(utils.TrainInput(environment=s.environment, state=s.state, value=valuation, policy=s.policy))
         return states
 
