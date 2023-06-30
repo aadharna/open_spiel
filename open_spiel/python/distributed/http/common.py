@@ -3,7 +3,7 @@ import os
 import socket
 import sys
 from enum import Enum
-from typing import Union, TextIO, Dict, Any, Mapping
+from typing import Union, TextIO, Dict, Any, Mapping, List
 
 import fastapi
 import pyspiel
@@ -22,22 +22,30 @@ def render_config(file: Union[str, TextIO], config: Mapping[str, Any]):
     return template.render(**config)
 
 
-def get_default_template_yaml_candidate():
+def get_default_template_yaml_candidate(directory:Union[List[str],str]):
     known_candidates = ["config.yaml.j2", "config.yml.j2","config.j2.yaml", "config.j2.yml"]
     candidate = None
-    for c in known_candidates:
-        if os.path.exists(c):
-            candidate = c
-            break
+    if isinstance(directory, str):
+        directory = [directory]
+    for dir in directory:
+        for c in known_candidates:
+            path=os.path.join(dir,c)
+            if os.path.exists(path):
+                candidate = path
+                return candidate
     return candidate
 
-def get_default_yaml_candidate():
+def get_default_yaml_candidate(directory:Union[List[str],str]):
     known_candidates = ["config.yaml", "config.yml"]
     candidate = None
-    for c in known_candidates:
-        if os.path.exists(c):
-            candidate = c
-            break
+    if isinstance(directory, str):
+        directory = [directory]
+    for dir in directory:
+        for c in known_candidates:
+            path=os.path.join(dir,c)
+            if os.path.exists(path):
+                candidate = path
+                return candidate
     return candidate
 
 
@@ -60,16 +68,19 @@ class AlphaZeroService(fastapi.FastAPI):
         parser = argparse.ArgumentParser()
         parser.add_argument("--config", type=str, default="config.yaml")
         args, _ = parser.parse_known_args(argv)
+        file_directory=os.path.dirname(__file__)
+        parent_directory=os.path.dirname(file_directory)
+        working_directory=os.getcwd()
         if os.environ.get("AZ_CONFIG") is not None and os.path.exists(os.environ.get("AZ_CONFIG")):
             with open(os.environ.get("AZ_CONFIG"), "r") as f:
                 self.config = yaml.safe_load(f)
-        elif template_path := get_default_template_yaml_candidate():
+        elif template_path := get_default_template_yaml_candidate([working_directory,file_directory,parent_directory]):
             with open(template_path, "r") as f:
                 self.config = yaml.safe_load(render_config(f, config=os.environ))
         elif hasattr(args, "config") and os.path.exists(args.config):
             with open(args.config, "r") as f:
                 self.config = yaml.safe_load(f)
-        elif path := get_default_yaml_candidate():
+        elif path := get_default_yaml_candidate([working_directory,file_directory,parent_directory]):
             with open(template_path, "r") as f:
                 self.config = yaml.safe_load(f)
         elif path is not None:
@@ -92,6 +103,7 @@ class AlphaZeroService(fastapi.FastAPI):
         self.game = game
         make_discovery_directory(config)
         self.working_directory = os.path.join(self.services_path, service_type, socket.gethostname())
+        self.role=service_type
         os.makedirs(self.working_directory, exist_ok=True)
         config.working_directory = self.working_directory
 

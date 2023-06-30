@@ -3,7 +3,7 @@
 quiet: true #Whether suppress all console output
 verbose: false #Whether to print detailed logs to the console
 specification: 2
-path: /tmp/az-test # Path to the working directory. Leave empty for a randomly generated path
+path: {{ AZ_PATH | default("/tmp/az-test") }} # Path to the working directory. Leave empty for a randomly generated path
 
 
 game:
