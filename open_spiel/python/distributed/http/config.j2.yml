@@ -1,0 +1,127 @@
+#Configuration file for Alpha Zero on Mean Payoff Games
+
+quiet: true #Whether suppress all console output
+verbose: false #Whether to print detailed logs to the console
+specification: 2
+path: /tmp/az-test # Path to the working directory. Leave empty for a randomly generated path
+
+
+game:
+    name: "mpg" # Name of the game. Should be mpg for Mean Payoff Games
+    max_repeats: 3
+    max_size: 150
+    generator:
+        name: "usgnp"
+        params: [10, 150, 0.1, 1, -1, 1, 39]
+    fix_environment: false #Whether to fix the environment or not
+    # winner is the objective of determining the winner of the game
+    # mean_payoff is the objective of determining the mean payoff of the game
+
+model: #Model configuration
+    name: "mean_payoff" #Name of the model
+    architecture: "res_gnn" #Architecture of the model
+    width: 3 #Width of the model
+    depth: 3 #Depth of the model
+    arguments: #Arguments for the model. The arguments are specific to the architecture
+        conv_layers: [6, 4, 1, 6, 4, 1, 6, 4]
+        fc_layers: null
+        transposed: false
+        masked_softmax: false
+        ragged_batch: false
+        random_connection_probability: 0.01 # Probability of adding a random connection
+        weight_noise_layer: null #The layer to add noise to the weights' matrix.
+        weight_normalisation: std # The type of normalisation to the graph's weight matrix. Object evaluating to false, or one of "std", "uniform", "none"
+        weight_normalisation_regularization: 0.01 # Regularization parameter for weight normalisation
+        residual_connections: {3:[0],6:[3]} # Use residual connections between layers
+        #Residual connections are defined as a dictionary of the form {layer_id: [list of layers to connect to]}
+        #The layer_id is the index of the layer in the list of layers. The layer of index 0 is the input layer.
+
+        difference_residual: false # Whether to use the difference residual or the standard residual
+        graph_normalisation: true # The graph normalisation operator to use. (None, "layernorm", "batchnorm")
+        vacuous_connections: true # Whether to add vacuous connections or not
+
+training:
+    batch_size: {{BATCH_SIZE | default(128) }}
+    learning_rate: 0.001
+    weight_decay: 0.0001
+    checkpoint_freq: 100 # Should be renamed to checkpoint_interval
+    max_steps: 100000 #Should be renamed to max_iterations
+    steps_per_epoch: 100
+    epochs_per_iteration: 6
+    optimizer: "adam" #One of "adam", "sgd", "rmsprop"
+    path: null #Path to the model. Leave empty for a randomly generated path
+    dataset_api: true # Whether to use the dataset API or not
+    padding: true # Whether to pad the dataset or use ragged tensors
+
+
+
+replay_buffer:
+    buffer_size: {{BUFFER_SIZE | default(1000000) }}
+    reuse: 32
+    implementation:
+        table: "mpg"
+        type: grpc #One of "local", "grpc"
+        address: {{ GRPC_ADDRESS  | default("auto") }} # Address of the replay buffer. Auto will automatically detect the address
+        port : {{GRPC_PORT | default(50051) }}
+        sampler:
+            name: "random" # one of "random", "fifo", "lifo", "priority"
+            params: [] # Additional parameters for the sampler
+        remover:
+            name: "fifo" # one of "random" or "fifo", "lifo", "priority"
+            params: [] # Additional parameters for the remover
+        min_size: {{BUFFER_MIN_SIZE | default(8192)}} # minimum number of elements in the buffer before sampling
+        max_in_flight_samples_per_worker: {{MAX_FLIGHT_SAMPLES | default(192)}} # maximum number of samples that can be in flight per worker
+    value_target: value # The objective of the game. One of "winner", "mean_payoff".
+    # winner is the objective of determining the winner of the game
+    # mean_payoff is the objective of determining the mean payoff of the game
+    # value the mcts value of the state
+    writer_sampler: 0.1 # If string, one of "trajectory", "random"
+    # If trajectory, the replay buffer will store entire trajectories
+    # If random, the replay buffer will sample a step from a trajectory
+    # If an integer, the number of steps to be extracted from the trajectory
+    # If a float, the fraction of the trajectory to be extracted
+
+
+
+
+services:
+    actors:
+        instances: {{ACTOR_INSTANCES | default(6) }}
+        port: {{ACTOR_PORT | default(13252)}} # Port to use for the actors
+        stats_file: stats.jsonl # Base name of the file to store the statistics of the actors
+        # The file will be named as <stats_basename>.<instance_id>.json
+        stats_frequency: 100 # Frequency of the statistics collection in seconds
+        max_collection_time: 100 # Maximum time to collect data in seconds. If null, data collection is run indefinitely.
+        collection_period: 3 # Period between data collection in seconds. If 0, data collection is run only once.
+        request_length: 64 # The number of samples to send in a single request.
+        collection_probability: 0.01 # The probability of collecting data from an actor
+    evaluators:
+        instances: {{EVALUATOR_INSTANCES | default(3) }}
+        port: {{EVALUATOR_PORT | default(13251)}} # Port to use for the evaluators
+        stats_file: stats.jsonl # Base name of the file to store the statistics of the evaluators
+        # The file will be named as <stats_basename>.<instance_id>.json
+        opponent: {{EVALUATOR_OPPONENT | default("mcts") }} # One of "random", "mcts", "greedy"
+        stats_frequency: 100 # Frequency of the statistics collection in seconds
+        evaluation_window: 100
+        evaluation_levels: 7
+        max_collection_time: 10 # Maximum time to collect data in seconds. If null, data collection is run indefinitely.
+        collection_period: 3 # Period between data collection in seconds. If 0, data collection is run only once.
+
+    heartbeat_response: 0.300 # The number of seconds to wait before responding to a heartbeat request
+    timeout: 3 # The number of seconds to wait before considering a worker dead
+    wait_for_discovery: true # Whether to wait for discovery before starting the training
+
+mcts:
+    uct_c: 2
+    policy_epsilon: 0.25
+    policy_alpha: 1
+    temperature: 1
+    temperature_drop: 10
+    max_simulations: 100
+
+
+http:
+    port: 37215
+    discovery_file: null # Path to the discovery file. Leave empty for a randomly generated path
+    # The randomly generated path should be consistent across all the services
+    timeout: 100 # Timeout for the HTTP requests in seconds

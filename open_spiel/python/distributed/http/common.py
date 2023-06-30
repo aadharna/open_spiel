@@ -3,12 +3,42 @@ import os
 import socket
 import sys
 from enum import Enum
+from typing import Union, TextIO, Dict, Any, Mapping
 
 import fastapi
 import pyspiel
 import yaml
 from open_spiel.python.algorithms.alpha_zero_mpg.utils import nested_dict_to_namespace
 import open_spiel.python.algorithms.alpha_zero_mpg.utils as mpg_utils
+import jinja2
+
+
+def render_config(file: Union[str, TextIO], config: Mapping[str, Any]):
+    if isinstance(file, str):
+        with open(file, "r") as f:
+            template = jinja2.Template(f.read())
+    else:
+        template = jinja2.Template(file.read())
+    return template.render(**config)
+
+
+def get_default_template_yaml_candidate():
+    known_candidates = ["config.yaml.j2", "config.yml.j2","config.j2.yaml", "config.j2.yml"]
+    candidate = None
+    for c in known_candidates:
+        if os.path.exists(c):
+            candidate = c
+            break
+    return candidate
+
+def get_default_yaml_candidate():
+    known_candidates = ["config.yaml", "config.yml"]
+    candidate = None
+    for c in known_candidates:
+        if os.path.exists(c):
+            candidate = c
+            break
+    return candidate
 
 
 def make_discovery_directory(config):
@@ -30,11 +60,17 @@ class AlphaZeroService(fastapi.FastAPI):
         parser = argparse.ArgumentParser()
         parser.add_argument("--config", type=str, default="config.yaml")
         args, _ = parser.parse_known_args(argv)
-        if hasattr(args, "config") and os.path.exists(args.config):
+        if os.environ.get("AZ_CONFIG") is not None and os.path.exists(os.environ.get("AZ_CONFIG")):
+            with open(os.environ.get("AZ_CONFIG"), "r") as f:
+                self.config = yaml.safe_load(f)
+        elif template_path := get_default_template_yaml_candidate():
+            with open(template_path, "r") as f:
+                self.config = yaml.safe_load(render_config(f, config=os.environ))
+        elif hasattr(args, "config") and os.path.exists(args.config):
             with open(args.config, "r") as f:
                 self.config = yaml.safe_load(f)
-        elif os.path.exists("config.yaml"):
-            with open("config.yaml", "r") as f:
+        elif path := get_default_yaml_candidate():
+            with open(template_path, "r") as f:
                 self.config = yaml.safe_load(f)
         elif path is not None:
             with open(path, "r") as f:
@@ -55,7 +91,7 @@ class AlphaZeroService(fastapi.FastAPI):
         config.output_size = game.num_distinct_actions()
         self.game = game
         make_discovery_directory(config)
-        self.working_directory = os.path.join(self.services_path, service_type,socket.gethostname())
+        self.working_directory = os.path.join(self.services_path, service_type, socket.gethostname())
         os.makedirs(self.working_directory, exist_ok=True)
         config.working_directory = self.working_directory
 
