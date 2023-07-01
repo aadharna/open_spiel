@@ -137,12 +137,11 @@ namespace open_spiel::mpg {
     void MPGEnvironmentState::DoApplyAction(Action move)
     {
       SPIEL_CHECK_TRUE(environment->graph[current_state].count(move));
-      float K= static_cast<float>(num_moves_)/static_cast<float>(num_moves_+1);
-      mean_payoff = K * mean_payoff +environment->graph[current_state].at(move) / static_cast<float>(num_moves_ + 1);
+      float K= static_cast<float>(move_number_)/static_cast<float>(move_number_+1);
+      mean_payoff = K * mean_payoff +environment->graph[current_state].at(move) / static_cast<float>(move_number_ + 1);
       current_state = move;
       current_player_ = ! current_player_;
       state_history.push_back(current_state);
-      num_moves_ += 1;
       visits_per_player[current_player_][move] += 1;
     }
 
@@ -181,7 +180,7 @@ namespace open_spiel::mpg {
             stream << "}\n";
             stream << "@Current state: " << current_state << "\n";
             stream << "@Current player: " << current_player_ << "\n";
-            stream << "@Number of moves: " << num_moves_ << "\n";
+            stream << "@Number of moves: " << move_number_ << "\n";
             stream << "@@@\n";
             return stream.str();
         }
@@ -228,7 +227,7 @@ namespace open_spiel::mpg {
             terminal = std::any_of(visits_per_player[PlayerIdentifier::kMinPlayer].begin(),
                                    visits_per_player[PlayerIdentifier::kMinPlayer].end(),
                                    [this](auto p){return p >= game_->GetParameters()["max_repeats"].int_value();});
-        terminal = terminal || num_moves_ >= MaxNumMoves();
+        terminal = terminal || move_number_ >= MaxNumMoves();
       return terminal;
     }
 
@@ -240,7 +239,7 @@ namespace open_spiel::mpg {
             return 2*GraphSize()* game_->GetParameters()["max_repeats"].int_value();
     }
 
-    double Player1Return(double mean_payoff)
+    double Player1Return(MeanPayoffType mean_payoff)
     {
         if(mean_payoff > 0)
             return 1;
@@ -258,7 +257,7 @@ namespace open_spiel::mpg {
         {
 
             //SPIEL_CHECK_FLOAT_NEAR(MeanPayoff(M), mean_payoff, 1e-3);
-            auto S= Player1Return(mean_payoff);
+            auto S= Player1Return(GetMeanPayoff(true));
             return {S, -S};
         }
     }
@@ -298,16 +297,22 @@ namespace open_spiel::mpg {
     {
     SPIEL_CHECK_GE(move, 0);
     SPIEL_CHECK_LT(move, num_distinct_actions_);
+    SPIEL_CHECK_GE(move_number_, 1);
         visits_per_player[current_player_][move] -= 1;
-        float K= static_cast<float>(num_moves_)/static_cast<float>(num_moves_+1);
         state_history.pop_back();
         current_state = state_history.back();
-        mean_payoff = mean_payoff / K - environment->graph[current_state].at(move) / static_cast<float>(num_moves_ + 1);
+        if(move_number_>1)
+        {
+            float K= static_cast<float>(move_number_-1)/static_cast<float>(move_number_);
+            mean_payoff =
+                    mean_payoff / K - environment->graph[current_state].at(move) / static_cast<float>(move_number_ );
+        }
+        else
+            mean_payoff=0;
         current_player_ = player;
         outcome_ = kInvalidPlayer;
-        num_moves_ -= 1;
         history_.pop_back();
-        --move_number_;
+        move_number_--;
     }
 
     AdjacencyPayoffsType MPGEnvironmentState::LegalActionsWithPayoffs() const
@@ -319,13 +324,13 @@ namespace open_spiel::mpg {
     {
         current_state=other.current_state;
         current_player_=other.current_player_;
-        num_moves_=other.num_moves_;
         mean_payoff=other.mean_payoff;
         environment=other.environment;
         state_history=other.state_history;
         visits_per_player=other.visits_per_player;
         history_=other.history_;
         move_number_=other.move_number_;
+        payoff_offset=other.payoff_offset;
     }
 
 
@@ -337,7 +342,7 @@ namespace open_spiel::mpg {
 
     MPGEnvironmentState::MPGEnvironmentState(std::shared_ptr<const Game> game,
                                              std::shared_ptr<Environment> environment_):State(std::move(game)), environment(std::move(environment_)),
-                                             current_player_(0), num_moves_(0), mean_payoff(0)
+                                             current_player_(0), mean_payoff(0)
      {
         current_state=this->environment->starting_state;
         state_history={current_state};
@@ -345,8 +350,9 @@ namespace open_spiel::mpg {
         visits_per_player[PlayerIdentifier::kMaxPlayer].resize(environment->GraphSize(), 0);
      }
 
-    WeightType MPGEnvironmentState::GetMeanPayoff() const {
-        return mean_payoff;
+    MeanPayoffType MPGEnvironmentState::GetMeanPayoff(bool offset) const
+    {
+        return offset? mean_payoff+payoff_offset/(move_number_+1): mean_payoff;
     }
 
     NodeType MPGEnvironmentState::GetCurrentState() const {
@@ -443,7 +449,7 @@ namespace open_spiel::mpg {
         return environment->CountEdges();
     }
 
-    std::optional<WeightType> MPGEnvironmentState::GetPayoff(NodeType u, NodeType v) const {
+    std::optional<MeanPayoffType> MPGEnvironmentState::GetPayoff(NodeType u, NodeType v) const {
         return environment->GetPayoff(u,v);
     }
 
@@ -508,7 +514,7 @@ namespace open_spiel::mpg {
         return std::accumulate(graph.begin(),graph.end(),0,[](int acc, const auto& adjList){return acc+adjList.size();});
     }
 
-    std::optional<WeightType> Environment::GetPayoff(NodeType u, NodeType v) const {
+    std::optional<MeanPayoffType> Environment::GetPayoff(NodeType u, NodeType v) const {
         auto it=graph[u].find(v);
         if(it==graph[u].end())
             return std::nullopt;
@@ -519,6 +525,10 @@ namespace open_spiel::mpg {
     [[nodiscard]] NodeType MPGEnvironmentState::CurrentState() const
     {
         return current_state;
+    }
+
+    void MPGEnvironmentState::SetPayoffOffset(MeanPayoffType offset) {
+        payoff_offset=offset;
     }
 
 

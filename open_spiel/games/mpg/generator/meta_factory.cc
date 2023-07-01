@@ -39,6 +39,8 @@ namespace open_spiel::mpg
         RegisterFactory("example",std::make_shared<ExampleMetaFactory>());
         RegisterFactory("file",std::make_shared<UnimplementedMetaFactory>());
         RegisterFactory("dataset",std::make_shared<DatasetMetaFactory>());
+        RegisterFactory("gnc",std::make_shared<UniformGncMetaFactory>());
+        RegisterFactory("usgnc",std::make_shared<UniformlyStochasticUniformGncMetaFactory>());
     }
 
     std::shared_ptr<const Game> ParserMetaFactory::CreateGame(const GameParameters &params)

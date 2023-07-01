@@ -104,6 +104,8 @@ class AlphaZeroService(fastapi.FastAPI):
         make_discovery_directory(config)
         self.working_directory = os.path.join(self.services_path, service_type, socket.gethostname())
         self.role=service_type
+        self.config.role=service_type
+        self.config.service=service_type
         os.makedirs(self.working_directory, exist_ok=True)
         config.working_directory = self.working_directory
 

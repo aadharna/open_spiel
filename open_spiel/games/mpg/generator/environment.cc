@@ -6,6 +6,8 @@
 #include "environment.h"
 #include "graph.h"
 #include "mpg/generator/environment.h"
+#include "games/mpg/generator/environment.h"
+
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <fstream>
@@ -127,4 +129,26 @@ namespace open_spiel::mpg
         }
     }
 
+    UniformGncEnvironmentFactory::UniformGncEnvironmentFactory(NodeType n, WeightType c, WeightType a, WeightType b,
+                                                               std::uint64_t seed) :GeneratorEnvironmentFactory(
+            std::make_shared<WeightedGraphGenerator>(std::make_shared<SinklessGncGenerator>(n,c,seed),
+                                                     std::make_shared<UniformWeightGenerator>(a,b,seed)),
+            seed
+    )
+    {
+
+    }
+
+    UniformlyStochasticUniformGncEnvironmentFactory::UniformlyStochasticUniformGncEnvironmentFactory(NodeType n_min,
+                     NodeType n_max, double c_min, double c_max, WeightType a, WeightType b, std::uint64_t seed):
+            GeneratorEnvironmentFactory
+                    (
+                            std::make_shared<WeightedGraphGenerator>(std::make_shared<UniformlyStochasticSinklessGncGenerator>(n_min,n_max,c_min,c_max,seed),
+                                                                     std::make_shared<UniformWeightGenerator>(a,b,seed)),
+                            seed
+                    )
+
+                    {
+
+    }
 }

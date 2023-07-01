@@ -85,6 +85,8 @@ namespace open_spiel::mpg
         kMinPlayer = kPlayer2
     };
 
+    using MeanPayoffType=double;
+
     struct Environment
     {
         WeightedGraphType graph;
@@ -94,7 +96,7 @@ namespace open_spiel::mpg
 
         [[nodiscard]] int GraphSize() const;
         [[nodiscard]] int CountEdges() const;
-        [[nodiscard]] std::optional<WeightType> GetPayoff(NodeType u, NodeType v) const;
+        [[nodiscard]] std::optional<MeanPayoffType> GetPayoff(NodeType u, NodeType v) const;
     };
 
     using AdjacencyPayoffsType = std::map<NodeType,WeightType> ;
@@ -136,7 +138,7 @@ namespace open_spiel::mpg
         // Only used by Ultimate Tic-Tac-Toe.
         void SetCurrentPlayer(Player player) { current_player_ = player; }
         NodeType GetCurrentState() const;
-        WeightType GetMeanPayoff() const;
+        MeanPayoffType GetMeanPayoff(bool offset=true) const;
 
         AdjacencyPayoffsType LegalActionsWithPayoffs() const;
 
@@ -144,8 +146,9 @@ namespace open_spiel::mpg
 
         std::vector<std::vector<int>> ObservationTensorsShapeList() const override;
         int CountEdges() const;
-        [[nodiscard]] std::optional<WeightType> GetPayoff(NodeType u, NodeType v) const;
+        [[nodiscard]] std::optional<MeanPayoffType> GetPayoff(NodeType u, NodeType v) const;
         [[nodiscard]] NodeType CurrentState() const;
+        void SetPayoffOffset(MeanPayoffType offset);
 
     protected:
       inline static constexpr class Clone_t{} Cloner{};
@@ -153,7 +156,7 @@ namespace open_spiel::mpg
       void DoApplyAction(Action move) override;
       std::array<int,3> ObservationEnvironmentTensorShape() const;
         NodeType current_state = 0;
-      WeightType mean_payoff = 0;
+      double mean_payoff = 0, payoff_offset = 0;
       std::vector<NodeType> state_history;
       std::shared_ptr<Environment> environment;
       std::array<std::vector<std::uint32_t>,2> visits_per_player;
@@ -161,7 +164,6 @@ namespace open_spiel::mpg
      private:
       Player current_player_ = 0;         // Player zero goes first
       Player outcome_ = kInvalidPlayer;
-      int num_moves_ = 0;
       friend class MPGMetaGame;
     };
 

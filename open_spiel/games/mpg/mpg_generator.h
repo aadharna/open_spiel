@@ -23,7 +23,28 @@ namespace open_spiel::mpg
         std::size_t MaxArgs() const override;
     };
 
+    class UniformGncMetaFactory : public ParametricMetaFactory
+    {
+        std::shared_ptr<WeightedGraphGenerator> weighted_graph_generator;
+        std::mt19937_64 rng;
+    public:
+        std::shared_ptr<const Game> GameFromArgs(const std::vector<double> &args,const GameParameters &params) override;
+        std::size_t MinArgs() const override;
+        std::size_t MaxArgs() const override;
+    };
+
+
     class UniformlyStochasticUniformGnpMetaFactory : public ParametricMetaFactory
+    {
+        std::shared_ptr<WeightedGraphGenerator> weighted_graph_generator;
+        std::mt19937_64 rng;
+    public:
+        std::shared_ptr<const Game> GameFromArgs(const std::vector<double> &args,const GameParameters &params) override;
+        std::size_t MinArgs() const override;
+        std::size_t MaxArgs() const override;
+    };
+
+    class UniformlyStochasticUniformGncMetaFactory : public ParametricMetaFactory
     {
         std::shared_ptr<WeightedGraphGenerator> weighted_graph_generator;
         std::mt19937_64 rng;

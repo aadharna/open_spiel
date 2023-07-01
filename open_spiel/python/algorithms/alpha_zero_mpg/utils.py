@@ -4,7 +4,7 @@ import collections
 import datetime
 import functools
 import traceback
-from typing import Iterable, List, Union, Tuple
+from typing import Iterable, List, Union, Tuple, Type, Dict, Any
 
 import numpy as np
 import reverb
@@ -285,15 +285,75 @@ def _game_result_from_perspective(reward,player):
     else:
         return -reward
 
-def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_environment=False):
+
+def generate_payoff_offset(distribution:str,params,seed=None):
+    rng=np.random.RandomState(seed)
+    if distribution=="zero":
+        return 0
+    elif distribution=="uniform":
+        return rng.uniform(-params[0],params[0])
+    elif distribution=="normal":
+        return rng.normal(0,params[0])
+    else:
+        raise ValueError("Unknown distribution: {}".format(distribution))
+
+class PayoffOffset(abc.ABC):
+
+    @abc.abstractmethod
+    def call(self):
+        pass
+    def __call__(self) -> float:
+        return self.call()
+
+    registered_offsets:Dict[str,Type["PayoffOffset"]]={}
+
+    @staticmethod
+    def from_registry(name:str,params:List[Any],seed=None):
+        if name not in PayoffOffset.registered_offsets:
+            raise ValueError("Unknown payoff offset: {}".format(name))
+        return PayoffOffset.registered_offsets[name](*params,seed=seed)
+
+
+def register_offset(name:str):
+    def decorator(cls:Type[PayoffOffset]):
+        PayoffOffset.registered_offsets[name]=cls
+        return cls
+    return decorator
+
+@register_offset("zero")
+class ZeroPayoffOffset(PayoffOffset):
+    def __init__(self,seed=None):
+        pass
+    def call(self):
+        return 0
+
+@register_offset("uniform")
+class UniformPayoffOffset(PayoffOffset):
+    def __init__(self,radius,seed=None):
+        self.radius=radius
+        self.rng=np.random.RandomState(seed)
+    def call(self):
+        return self.rng.uniform(-self.radius,self.radius)
+
+@register_offset("normal")
+class NormalPayoffOffset(PayoffOffset):
+    def __init__(self,std,seed=None):
+        self.std=std
+        self.rng=np.random.RandomState(seed)
+    def call(self):
+        return self.rng.normal(0,self.std)
+
+def play_game(logger, game_num, game, bots, temperature, temperature_drop, fix_environment=False,payoff_offset=None):
     """Play one game, return the trajectory."""
     actions = []
+    random_state = np.random.RandomState()
     if fix_environment:
         state = game.new_initial_state()
     else:
         state = game.new_initial_environment_state()
+    if payoff_offset is not None:
+        state.set_payoff_offset(payoff_offset())
     trajectory = Trajectory(edges_count=state.count_edges(),graph_size=state.graph_size())
-    random_state = np.random.RandomState()
     logger.opt_print(" Starting game {} ".format(game_num).center(60, "-"))
     logger.opt_print("Initial state:\n{}".format(state))
     game_length= 0

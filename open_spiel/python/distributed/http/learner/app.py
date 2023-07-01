@@ -8,6 +8,8 @@ import threading
 from typing import Union, List
 
 import fastapi
+from open_spiel.python.distributed.http.dto import table
+
 import open_spiel.python.algorithms.alpha_zero_mpg.services.actor as actor
 import open_spiel.python.algorithms.alpha_zero_mpg.dto as mpg_dto
 import open_spiel.python.algorithms.alpha_zero_mpg.utils as utils
@@ -136,6 +138,14 @@ def stats():
 @app.get("/update")
 def update():
     return NotImplementedError()
+
+@app.get("/replay_buffer")
+def replay_buffer():
+    return table.Table.from_server_info(app.reverb_server.localhost_client().server_info())
+
+@app.get("/replay_buffer/{table}")
+def replay_buffer_table(table:str):
+    return app.reverb_server.localhost_client().server_info()[table]
 
 
 @app.get("/discovery")

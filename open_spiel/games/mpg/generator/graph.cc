@@ -76,4 +76,29 @@ namespace open_spiel::mpg
             n_min(n_min),n_max(n_max),p_min(p_min),p_max(p_max),rng(seed){
 
     }
+
+    SinklessGncGenerator::SinklessGncGenerator(std::uint64_t n, double c, std::uint64_t seed) : SinklessGnpGenerator(n,std::min<double>(c/n,1),seed),
+        n(n),c(c),rng(seed)
+    {
+    }
+
+    GncGenerator::GncGenerator(std::uint64_t n, double c, std::uint64_t seed) : GnpGenerator(n,std::min<double>(c/n,1),seed),c(c)
+    {
+    }
+
+    UniformlyStochasticSinklessGncGenerator::UniformlyStochasticSinklessGncGenerator(NodeType n_min, NodeType n_max,
+                                                                                     double c_min, double c_max,
+                                                                                     std::uint64_t seed):
+                                                                                     n_min(n_min),n_max(n_max),c_min(c_min),c_max(c_max),rng(seed)
+     {
+
+    }
+
+    GraphType UniformlyStochasticSinklessGncGenerator::operator()()
+    {
+        std::uniform_int_distribution<NodeType> n_distribution(n_min,n_max);
+        std::uniform_real_distribution<double> c_distribution(c_min,c_max);
+        auto generator=std::make_unique<SinklessGncGenerator>(n_distribution(rng),c_distribution(rng),rng());
+        return (*generator)();
+    }
 }

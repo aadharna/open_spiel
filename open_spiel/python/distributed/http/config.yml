@@ -80,6 +80,9 @@ replay_buffer:
     # If random, the replay buffer will sample a step from a trajectory
     # If an integer, the number of steps to be extracted from the trajectory
     # If a float, the fraction of the trajectory to be extracted
+    payoff_offset:
+        distribution: "uniform" # One of "uniform", "normal", "zero"
+        params: [1] # Parameters of the distribution
 
 
 

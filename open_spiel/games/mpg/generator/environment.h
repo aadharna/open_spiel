@@ -34,6 +34,14 @@ namespace open_spiel::mpg
 
     };
 
+    class UniformGncEnvironmentFactory : public GeneratorEnvironmentFactory
+    {
+
+    public:
+        UniformGncEnvironmentFactory(NodeType n, WeightType c, WeightType a, WeightType b, std::uint64_t seed = 0);
+
+    };
+
     class UniformlyStochasticUniformGnpEnvironmentFactory : public GeneratorEnvironmentFactory
     {
     public:
@@ -41,8 +49,20 @@ namespace open_spiel::mpg
                                                         WeightType a, WeightType b, std::uint64_t seed = 0);
     };
 
+    class UniformlyStochasticUniformGncEnvironmentFactory : public GeneratorEnvironmentFactory
+    {
+    public:
+        UniformlyStochasticUniformGncEnvironmentFactory(NodeType n_min, NodeType n_max, double c_min, double c_max,
+                                                        WeightType a, WeightType b, std::uint64_t seed = 0);
+    };
+
     using USUGEnvironmentFactory = UniformlyStochasticUniformGnpEnvironmentFactory;
     using UGEnvironmentFactory = UniformGnpEnvironmentFactory;
+
+    using USparseEnvironmentFactory = UniformGncEnvironmentFactory;
+    using UDenseEnvironmentFactory = UniformGnpEnvironmentFactory;
+    using USUSparseEnvironmentFactory = UniformlyStochasticUniformGncEnvironmentFactory;
+    using USUDenseEnvironmentFactory = UniformlyStochasticUniformGnpEnvironmentFactory;
 
     class DeterministicEnvironmentFactory : public EnvironmentFactory
     {

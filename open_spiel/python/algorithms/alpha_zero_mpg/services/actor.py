@@ -80,6 +80,7 @@ class MultiProcActor(Actor):
             bots_lib.init_bot(config=config.mcts, game=game, evaluator_=az_evaluator, evaluation=False,
                               bot_type="alpha-zero")
         ]
+        payoff_offset=utils.PayoffOffset.from_registry(name=config.replay_buffer.payoff_offset.distribution,params=config.replay_buffer.payoff_offset.params)
 
         self._reset_stats()
         for game_num in itertools.count():
@@ -113,7 +114,7 @@ class MultiProcActor(Actor):
                 logger.print("Updated model, new hash is {}.".format(model.hash()))
 
             message_data = utils.play_game(logger, game_num, game, bots, config.temperature,
-                                           config.temperature_drop, fix_environment=config.fix_environment)
+                                           config.temperature_drop, fix_environment=config.fix_environment,payoff_offset=payoff_offset)
             self._stats["num_games"] += 1
             game_stats: SelfPlayingGameStats = {
                 "winner": utils.get_winner_name(message_data.returns[0]),

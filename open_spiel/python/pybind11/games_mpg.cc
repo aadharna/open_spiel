@@ -42,7 +42,9 @@ void open_spiel::init_pyspiel_games_mpg(py::module& m) {
 
   py::classh<MPGEnvironmentState, State>(mpg, "MPGEnvironmentState")
       .def("get_current_state", &MPGEnvironmentState::GetCurrentState)
-      .def("get_meanpayoff", &MPGEnvironmentState::GetMeanPayoff)
+      .def("get_mean_payoff", &MPGEnvironmentState::GetMeanPayoff, py::arg("with_offset")=true)
+      .def("mean_payoff", &MPGEnvironmentState::GetMeanPayoff, py::arg("with_offset")=true)
+      .def("set_payoff_offset", &MPGEnvironmentState::SetPayoffOffset,py::arg("offset"))
       .def("legal_actions_with_payoffs",&MPGEnvironmentState::LegalActionsWithPayoffs)
       .def("graph_size", &MPGEnvironmentState::GraphSize)
       .def("count_edges", &MPGEnvironmentState::CountEdges)
