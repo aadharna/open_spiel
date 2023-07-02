@@ -196,6 +196,11 @@ namespace open_spiel::mpg
       int MaxGraphSize() const;
       std::string ActionToString(Player player, Action action_id) const override;
       std::shared_ptr<Environment> GetLastEnvironment() const;
+
+      void SetSeed(std::uint64_t seed) const;
+      void SetSeed() const;
+      void SetSeed(const std::string &seed) const;
+      void SetRNGState(const std::string&) const override;
     protected:
         std::unique_ptr<EnvironmentFactory> environment_factory;
         mutable std::shared_ptr<Environment> last_environment;

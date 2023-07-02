@@ -427,6 +427,7 @@ PYBIND11_MODULE(pyspiel, m) {
            [](std::shared_ptr<const Game> game, const GameParameters& params) {
              return game->MakeObserver(absl::nullopt, params);
            })
+       .def("set_rng_state", &Game::SetRNGState)
       .def("__str__", &Game::ToString)
       .def("__repr__", &Game::ToString)
       .def("__eq__",

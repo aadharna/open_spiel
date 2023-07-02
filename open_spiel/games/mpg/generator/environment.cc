@@ -11,6 +11,7 @@
 #include <boost/iostreams/filter/gzip.hpp>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <fstream>
+#include "random_pool.h"
 
 
 namespace open_spiel::mpg
@@ -34,6 +35,12 @@ namespace open_spiel::mpg
 
     }
 
+    UniformlyStochasticUniformGnpEnvironmentFactory::UniformlyStochasticUniformGnpEnvironmentFactory(NodeType n_min,
+                 NodeType n_max, double p_min, double p_max, WeightType a, WeightType b):
+                     UniformlyStochasticUniformGnpEnvironmentFactory(n_min,n_max,p_min,p_max,a,b,NextSeed()){
+
+    }
+
 
     GeneratorEnvironmentFactory::GeneratorEnvironmentFactory(std::shared_ptr<WeightedGraphGenerator> weighted_graph_generator, std::uint64_t seed) : weighted_graph_generator(std::move(weighted_graph_generator)),
                                                                                                                                                      rng(seed)
@@ -48,12 +55,40 @@ namespace open_spiel::mpg
         return std::make_shared<Environment>(G, dist(rng));
     }
 
+    GeneratorEnvironmentFactory::GeneratorEnvironmentFactory(
+            std::shared_ptr<struct WeightedGraphGenerator> weighted_graph_generator):
+                    GeneratorEnvironmentFactory(std::move(weighted_graph_generator),NextSeed())
+    {
+
+    }
+
+    void GeneratorEnvironmentFactory::SetSeed(std::uint64_t seed) {
+        rng.seed(seed);
+        weighted_graph_generator->SetSeed(seed);
+    }
+
+    void GeneratorEnvironmentFactory::SetSeed() {
+        rng.seed(NextSeed());
+        weighted_graph_generator->SetSeed();
+    }
+
+    void GeneratorEnvironmentFactory::SetSeed(const std::string &seed) {
+        rng.seed(std::hash<std::string>{}(seed));
+        weighted_graph_generator->SetSeed(seed);
+    }
+
     UniformGnpEnvironmentFactory::UniformGnpEnvironmentFactory(NodeType n, WeightType p, WeightType a, WeightType b, std::uint64_t seed): GeneratorEnvironmentFactory(
             std::make_shared<WeightedGraphGenerator>(std::make_shared<SinklessGnpGenerator>(n,p,seed),
                                                      std::make_shared<UniformWeightGenerator>(a,b,seed)),
             seed
     )
     {
+
+    }
+
+    UniformGnpEnvironmentFactory::UniformGnpEnvironmentFactory(NodeType n, WeightType p, WeightType a, WeightType b):
+        UniformGnpEnvironmentFactory(n,p,a,b,NextSeed())
+        {
 
     }
 
@@ -139,6 +174,12 @@ namespace open_spiel::mpg
 
     }
 
+    UniformGncEnvironmentFactory::UniformGncEnvironmentFactory(NodeType n, WeightType c, WeightType a, WeightType b):
+        UniformGncEnvironmentFactory(n,c,a,b,NextSeed())
+    {
+
+    }
+
     UniformlyStochasticUniformGncEnvironmentFactory::UniformlyStochasticUniformGncEnvironmentFactory(NodeType n_min,
                      NodeType n_max, double c_min, double c_max, WeightType a, WeightType b, std::uint64_t seed):
             GeneratorEnvironmentFactory
@@ -149,6 +190,25 @@ namespace open_spiel::mpg
                     )
 
                     {
+
+    }
+
+    UniformlyStochasticUniformGncEnvironmentFactory::UniformlyStochasticUniformGncEnvironmentFactory(NodeType n_min,
+                 NodeType n_max, double c_min, double c_max, WeightType a, WeightType b):
+                 UniformlyStochasticUniformGncEnvironmentFactory(n_min,n_max,c_min,c_max,a,b,NextSeed())
+     {
+
+    }
+
+    void EnvironmentFactory::SetSeed(std::uint64_t seed) {
+
+    }
+
+    void EnvironmentFactory::SetSeed() {
+
+    }
+
+    void EnvironmentFactory::SetSeed(const std::string &seed) {
 
     }
 }

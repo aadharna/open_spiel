@@ -93,7 +93,11 @@ class AlphaZeroService(fastapi.FastAPI):
         config = self.config
         mpg_utils.compatibility_mode(self.config)
         complete_game = mpg_utils.game_complete_name(config.game)
-        game = pyspiel.load_game(*complete_game)
+        if self.config.lazy_loading:
+            game = pyspiel.load_game(*complete_game)
+        else:
+            game = complete_game
+
         if game.observation_tensor_shape_specs() == pyspiel.TensorShapeSpecs.VECTOR:
             shape = game.observation_tensor_shape()
         else:

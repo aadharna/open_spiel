@@ -279,8 +279,9 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
         self.working_directory = working_directory or config.path
         self.stats_file = os.path.join(self.working_directory, stats_file)
 
-        self.stats_save_thread = PeriodicThread(self.stats_frequency, self.save_stats)
-        self.stats_save_thread.start()
+        #self.stats_save_thread = PeriodicThread(self.stats_frequency, self.save_stats)
+        #self.stats_save_thread.start()
+        self.collector.add_on_analysis(self._save_thread_stats)
         self.request_length = request_length
         self.collection_period = collection_period
         if collection_period is not None:
@@ -298,6 +299,11 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
         with open(self.stats_file, "a") as file:
             json.dump(self.collector.stats, file, default=utils.json_serializer)
             # Add a comma to separate the json objects
+            file.write("\n")
+
+    def _save_thread_stats(self,thread_id,stats):
+        with open(os.path.join(self.working_directory,f"actor-stats-{thread_id}.jsonl"),"a") as file:
+            json.dump(stats,file,default=utils.json_serializer)
             file.write("\n")
 
     def collect(self):
@@ -345,7 +351,8 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
 
 
 class EvaluatorOrchestrator(ProcessOrchestrator):
-    def __init__(self, evaluators: List[spawn.Process], config, max_game_length: int,*,working_directory=None):
+    def __init__(self, evaluators: List[spawn.Process], config, max_game_length: int,*,working_directory=None,
+                 collection_period=None):
         super().__init__(evaluators)
         max_collection_time = config.services.evaluators.max_collection_time
         stats_frequency = config.services.evaluators.stats_frequency
@@ -363,9 +370,23 @@ class EvaluatorOrchestrator(ProcessOrchestrator):
             stats_file = "evaluator"
         self.working_directory = working_directory or config.path
         self.stats_file = os.path.join(self.working_directory, stats_file)
-        self.stats_save_thread = PeriodicThread(self.stats_frequency, self.save_stats)
-        self.stats_save_thread.start()
+        #self.stats_save_thread = PeriodicThread(self.stats_frequency, self.save_stats)
+        #self.stats_save_thread.start()
+        self.collector.add_on_analysis(self._save_thread_stats)
 
+        self.collection_period = collection_period
+        if collection_period is not None:
+            self.collection_thread = PeriodicThread(collection_period, self.collect)
+            self.collection_thread.start()
+        else:
+            self.collection_thread = None
+
+
+    def _save_thread_stats(self,thread_id,stats):
+        with open(os.path.join(self.working_directory,f"actor-stats-{thread_id}.jsonl"),"a") as file:
+            json.dump(stats,file,default=utils.json_serializer)
+            file.write("\n")
+            
     def _time_to_stop(self, start_time):
         if self.max_collection_time is None:
             return False

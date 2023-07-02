@@ -435,6 +435,30 @@ namespace open_spiel::mpg {
         return last_environment;
     }
 
+    void MPGMetaGame::SetSeed() const {
+        absl::MutexLock lock(&environment_mutex);
+        environment_factory->SetSeed();
+    }
+
+    void MPGMetaGame::SetSeed(std::uint64_t seed) const {
+        absl::MutexLock lock(&environment_mutex);
+        environment_factory->SetSeed(seed);
+    }
+
+    void MPGMetaGame::SetSeed(const std::string &seed) const {
+        absl::MutexLock lock(&environment_mutex);
+        environment_factory->SetSeed(seed);
+    }
+
+    void MPGMetaGame::SetRNGState(const std::string &state) const {
+        absl::MutexLock lock(&environment_mutex);
+        //As a convention, if the state is empty, we set a random seed
+        if(state.empty())
+            environment_factory->SetSeed(std::random_device{}());
+        else
+            environment_factory->SetSeed(state);
+    }
+
     std::array<int,3> MPGEnvironmentState::ObservationEnvironmentTensorShape() const {
         if(game_->GetParameters().count("padding") && game_->GetParameters().at("padding").bool_value())
         {

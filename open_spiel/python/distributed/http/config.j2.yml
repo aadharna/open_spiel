@@ -4,6 +4,8 @@ quiet: true #Whether suppress all console output
 verbose: false #Whether to print detailed logs to the console
 specification: 2
 path: {{ AZ_PATH | default("/tmp/az-test") }} # Path to the working directory. Leave empty for a randomly generated path
+lazy_loading: true # Whether to delay loading the game until the first iteration. This is useful to induce randomness in the game generation.
+rng_state: null
 
 
 game:
@@ -12,7 +14,7 @@ game:
     max_size: 150
     generator:
         name: "usgnp"
-        params: [10, 150, 0.1, 1, -1, 1, 39]
+        params: [10, 150, 0.1, 1, -1, 1]
     fix_environment: false #Whether to fix the environment or not
     # winner is the objective of determining the winner of the game
     # mean_payoff is the objective of determining the mean payoff of the game

@@ -5,6 +5,7 @@ import datetime
 from typing import TypedDict, Union, List
 
 import numpy as np
+import pyspiel
 
 from ..multiprocess import queue as queue_lib
 
@@ -66,7 +67,14 @@ class MultiProcActor(Actor):
         else:
             return 0
 
-    def run(self, logger, queue, game):
+    def run(self, logger, queue, game:Union[str,pyspiel.Game]):
+        if isinstance(game,str):
+            game=pyspiel.load_game(game)
+        if self.config.rng_state is not None:
+            if self.config.rng_state == True:
+                game.set_rng_state(str(self.rng.randint(2 ** 32)))
+            else:
+                game.set_rng_state(str(self.config.rng_state))
         config = self.config
         logger.print("Initializing model")
         model = resource.SavedModelBundle(logger, config, game)

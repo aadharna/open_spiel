@@ -3,6 +3,9 @@ import datetime
 import itertools
 import traceback
 from typing import TypedDict, Union, List
+
+import pyspiel
+
 from ..multiprocess import queue as queue_lib
 import numpy as np
 from open_spiel.python.algorithms.alpha_zero_mpg.utils import Buffer
@@ -65,7 +68,14 @@ class MultiProcEvaluator(Evaluator):
         else:
             return 0
 
-    def run(self, logger, queue, game):
+    def run(self, logger, queue, game:Union[str,pyspiel.Game]):
+        if isinstance(game, str):
+            game = pyspiel.load_game(game)
+        if self.config.rng_state is not None:
+            if self.config.rng_state == True:
+                game.set_rng_state(str(self.rng.randint(2 ** 32)))
+            else:
+                game.set_rng_state(str(self.config.rng_state))
         config = self.config
         results = Buffer(self.config.evaluation_window)
         logger.print("Initializing model")

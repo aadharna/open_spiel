@@ -8,20 +8,24 @@
 #include "weight.h"
 namespace open_spiel::mpg
 {
-    class GraphGenerator
+    class GraphGenerator: public DefaultSeedable
     {
     public:
+        explicit GraphGenerator(std::uint64_t seed);
+        GraphGenerator();
         virtual GraphType operator()()=0;
         virtual ~GraphGenerator()=default;
+    protected:
+        std::mt19937_64 rng;
     };
 
     class GnpGenerator:public GraphGenerator
     {
         std::uint64_t n;
         double p;
-        std::mt19937_64 rng;
     public:
         GnpGenerator(std::uint64_t n, double p, std::uint64_t seed = 0);
+        GnpGenerator(std::uint64_t n, double p);
         GraphType operator()() override;
     };
 
@@ -29,16 +33,17 @@ namespace open_spiel::mpg
     {
         double c;
     public:
-        GncGenerator(std::uint64_t n, double c, std::uint64_t seed = 0);
+        GncGenerator(std::uint64_t n, double c, std::uint64_t seed);
+        GncGenerator(std::uint64_t n, double c);
     };
 
     class SinklessGnpGenerator: public GraphGenerator
     {
         std::uint64_t n;
         double p;
-        std::mt19937_64 rng;
     public:
-        SinklessGnpGenerator(std::uint64_t n, double p, std::uint64_t seed = 0);
+        SinklessGnpGenerator(std::uint64_t n, double p, std::uint64_t seed);
+        SinklessGnpGenerator(std::uint64_t n, double p);
         GraphType operator()() override;
     };
 
@@ -46,18 +51,18 @@ namespace open_spiel::mpg
     {
         std::uint64_t n;
         double c;
-        std::mt19937_64 rng;
     public:
-        SinklessGncGenerator(std::uint64_t n, double c, std::uint64_t seed = 0);
+        SinklessGncGenerator(std::uint64_t n, double c, std::uint64_t seed);
+        SinklessGncGenerator(std::uint64_t n, double c);
     };
 
     class UniformlyStochasticSinklessGnpGenerator: public GraphGenerator
     {
         NodeType n_min,n_max;
         double p_min,p_max;
-        std::mt19937_64 rng;
     public:
-        UniformlyStochasticSinklessGnpGenerator(NodeType n_min, NodeType n_max, double p_min, double p_max, std::uint64_t seed = 0);
+        UniformlyStochasticSinklessGnpGenerator(NodeType n_min, NodeType n_max, double p_min, double p_max, std::uint64_t seed);
+        UniformlyStochasticSinklessGnpGenerator(NodeType n_min, NodeType n_max, double p_min, double p_max);
         GraphType operator()() override;
     };
 
@@ -65,9 +70,9 @@ namespace open_spiel::mpg
     {
         NodeType n_min,n_max;
         double c_min,c_max;
-        std::mt19937_64 rng;
     public:
-        UniformlyStochasticSinklessGncGenerator(NodeType n_min, NodeType n_max, double c_min, double c_max, std::uint64_t seed = 0);
+        UniformlyStochasticSinklessGncGenerator(NodeType n_min, NodeType n_max, double c_min, double c_max, std::uint64_t seed);
+        UniformlyStochasticSinklessGncGenerator(NodeType n_min, NodeType n_max, double c_min, double c_max);
         GraphType operator()() override;
 
     };
@@ -76,15 +81,14 @@ namespace open_spiel::mpg
     using SGncGenerator=SinklessGncGenerator;
     using USSGncGenerator = UniformlyStochasticSinklessGncGenerator;
 
-    class WeightedGraphGenerator
+    class WeightedGraphGenerator:public RecursiveSeedable
     {
         std::shared_ptr<GraphGenerator> graph_generator;
         std::shared_ptr<WeightGenerator> weight_generator;
     public:
         WeightedGraphGenerator(std::shared_ptr<GraphGenerator> graph_generator, std::shared_ptr<WeightGenerator> weight_generator);
         WeightedGraphType operator()();
-
     };
 }
 
-#endif //OPEN_SPIEL_GRAPH_H
+#endif //OPEN_SPIEL_GENERATOR_GRAPH_H

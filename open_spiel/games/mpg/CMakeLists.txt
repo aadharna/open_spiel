@@ -20,6 +20,8 @@ if (OPEN_SPIEL_BUILD_WITH_BOOST)
         mpg/generator/choice.cc
         mpg/generator/weight.cc
         mpg/generator/weight.h
+          mpg/generator/random_pool.h
+            mpg/generator/random_pool.cc
          PARENT_SCOPE )
 
   set( BOOST_DEPENDENCIES

@@ -40,6 +40,8 @@ void open_spiel::init_pyspiel_games_mpg(py::module& m) {
       .value("Player2", PlayerIdentifier::kPlayer2)
       .export_values();
 
+
+
   py::classh<MPGEnvironmentState, State>(mpg, "MPGEnvironmentState")
       .def("get_current_state", &MPGEnvironmentState::GetCurrentState)
       .def("get_mean_payoff", &MPGEnvironmentState::GetMeanPayoff, py::arg("with_offset")=true)
