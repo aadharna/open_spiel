@@ -90,6 +90,7 @@ class MultiProcEvaluator(Evaluator):
             if self._stats["counter"] is None:
                 self._stats["counter"] = game_num
 
+            self._stats["end_time"] = datetime.datetime.now()
             if (self._stats["end_time"] - self._stats["start_time"]).seconds > self.stats_frequency:
                 queue.put(queue_lib.QueueMessage(queue_lib.MessageTypes.QUEUE_ANALYSIS, self.stats))
                 self._reset_stats()
@@ -156,7 +157,7 @@ class MultiProcEvaluator(Evaluator):
             results.append(trajectory.returns[az_player])
 
             # Send results back to the orchestrator
-            queue.put((difficulty, trajectory.returns[az_player]))
+            queue.put(queue_lib.QueueMessage(message_type=queue_lib.MessageTypes.QUEUE_MESSAGE,data=(difficulty, trajectory.returns[az_player])))
 
             # Update stats
             game_stats["winner"] = utils.get_winner_name(trajectory.returns[0])

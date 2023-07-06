@@ -13,7 +13,7 @@ from . import queue as queue_lib
 import os
 
 
-class TrajectoryCollector(abc.ABC):
+class Collector(abc.ABC):
 
     @abc.abstractmethod
     def collect(self):
@@ -24,7 +24,7 @@ class TrajectoryCollector(abc.ABC):
         return {}
 
 
-class ProcessesTrajectoryCollector(TrajectoryCollector):
+class ProcessesTrajectoryCollector(Collector):
     """
     Collect trajectory from processes
     """
@@ -203,6 +203,99 @@ class ProcessesTrajectoryCollector(TrajectoryCollector):
                                                     value_predictions=[v.as_dict for v in value_predictions])
 
 
+
+class ProcessesEvaluationCollector(Collector):
+    """
+    Collect evaluations from processes
+    """
+
+
+    def __init__(self, processes: List[spawn.Process], max_game_length=None, evaluation_rate=None,
+                 wait_duration: float = 0.01, block_until_ready: bool = False):
+        self.processes = processes
+        if max_game_length is None:
+            raise ValueError(f"max_game_length should be given")
+        if evaluation_rate is None:
+            raise ValueError(f"learn_rate should be given")
+        self.max_game_length = max_game_length
+        self.evaluation_rate = evaluation_rate
+        self.wait_duration = wait_duration
+        self.block_until_ready = block_until_ready
+        self._stats = [{} for _ in range(len(processes))]
+        self.on_heartbeat: List[Callable[[int, Any], None]] = []
+        self.on_close: List[Callable[[int, Any], None]] = []
+        self.on_analysis: List[Callable[[int, Any], None]] = []
+
+    def combiner(self):
+        while True:
+            found = 0
+            for thread_id, actor_process in enumerate(self.processes):
+                try:
+                    if self.block_until_ready:
+                        yield (thread_id, actor_process.queue.get())
+                    else:
+                        yield (thread_id, actor_process.queue.get_nowait())
+                except spawn.Empty:
+                    pass
+                else:
+                    found += 1
+            if found == 0:
+                time.sleep(self.wait_duration)  # 10ms
+        pass
+
+    @property
+    def stats(self) -> List[Dict]:
+        return self._stats
+
+    def add_on_heartbeat(self, callback: Callable[[int, Any], None]):
+        self.on_heartbeat.append(callback)
+        pass
+
+    def add_on_close(self, callback: Callable[[int, Any], None]):
+        self.on_close.append(callback)
+        pass
+
+    def add_on_analysis(self, callback: Callable[[int, Any], None]):
+        self.on_analysis.append(callback)
+
+
+
+    def collect(self):
+        evaluations={}
+        num_evaluations=0
+        for thread_id, queue_content in self.combiner():
+            message_type, message = queue_content
+            print(message_type)
+            print("Callbacks: {}".format(len(self.on_analysis)))
+            if message_type == queue_lib.MessageTypes.QUEUE_ANALYSIS:
+                self._stats[thread_id] = message
+                for callback in self.on_analysis:
+                    callback(thread_id, message)
+                continue
+
+            # Ignore the queue close message. It is used as a confirmation that the thread is done.
+            elif message_type == queue_lib.MessageTypes.QUEUE_CLOSE:
+                for callback in self.on_close:
+                    callback(thread_id, message)
+                continue
+            elif message_type == queue_lib.MessageTypes.QUEUE_HEARTBEAT:
+                print(f"Received heartbeat from {thread_id}")
+                for callback in self.on_heartbeat:
+                    callback(thread_id, message)
+                continue
+
+            #if self.sampler=="trajectory":
+
+            results = message
+            if thread_id not in evaluations:
+                evaluations[thread_id]=[]
+            evaluations[thread_id].append(results)
+            num_evaluations+=1
+            if num_evaluations >= self.evaluation_rate:
+                break
+        return evaluations
+
+
 class ProcessOrchestrator:
     def __init__(self, processes: List[spawn.Process]):
         self.processes = processes
@@ -351,17 +444,14 @@ class ActorsGrpcOrchestrator(ProcessOrchestrator):
 
 
 class EvaluatorOrchestrator(ProcessOrchestrator):
-    def __init__(self, evaluators: List[spawn.Process], config, max_game_length: int,*,working_directory=None,
-                 collection_period=None):
+    def __init__(self, evaluators: List[spawn.Process], config, max_game_length: int,*,working_directory=None):
         super().__init__(evaluators)
         max_collection_time = config.services.evaluators.max_collection_time
         stats_frequency = config.services.evaluators.stats_frequency
         stats_file = config.services.evaluators.stats_file
 
-        self.collector = ProcessesTrajectoryCollector(evaluators, max_game_length=max_game_length,
-                                                      learn_rate=1, block_until_ready=False,
-                                                      sampler=config.replay_buffer.writer_sampler,
-                                                      value_target=config.replay_buffer.value_target)
+        self.collector = ProcessesEvaluationCollector(evaluators, max_game_length=max_game_length,
+                                                      evaluation_rate=1, block_until_ready=False)
         self.config = config
         self._stop_request = False
         self.max_collection_time = max_collection_time
@@ -374,16 +464,16 @@ class EvaluatorOrchestrator(ProcessOrchestrator):
         #self.stats_save_thread.start()
         self.collector.add_on_analysis(self._save_thread_stats)
 
-        self.collection_period = collection_period
-        if collection_period is not None:
-            self.collection_thread = PeriodicThread(collection_period, self.collect)
+        self.collection_period = self.config.services.evaluators.collection_period
+        if self.collection_period is not None:
+            self.collection_thread = PeriodicThread(self.collection_period, self.collect)
             self.collection_thread.start()
         else:
             self.collection_thread = None
 
 
     def _save_thread_stats(self,thread_id,stats):
-        with open(os.path.join(self.working_directory,f"actor-stats-{thread_id}.jsonl"),"a") as file:
+        with open(os.path.join(self.working_directory,f"stats-{thread_id}.jsonl"),"a") as file:
             json.dump(stats,file,default=utils.json_serializer)
             file.write("\n")
             
@@ -400,9 +490,12 @@ class EvaluatorOrchestrator(ProcessOrchestrator):
 
     def collect(self):
         start_time = None
-        while not self._stop_request and not self._time_to_stop(start_time):
+        if self.max_collection_time is not None:
             start_time = time.time()
-            _, metadata = self.collector.collect()
+        while not self._stop_request and not self._time_to_stop(start_time):
+            print("Una Mattina, Mi Sono Alzato.")
+            start_time = time.time()
+            metadata = self.collector.collect()
             time.sleep(self.stats_frequency)
 
         pass
