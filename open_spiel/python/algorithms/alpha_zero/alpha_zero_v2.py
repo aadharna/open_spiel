@@ -46,8 +46,8 @@ import traceback
 import numpy as np
 
 from open_spiel.python.algorithms import mcts
-from open_spiel.python.algorithms.alpha_zero import evaluator as evaluator_lib
-from open_spiel.python.algorithms.alpha_zero import model_v2 as model_lib
+import evaluator as evaluator_lib
+import model_v2 as model_lib
 import pyspiel
 from open_spiel.python.utils import data_logger
 from open_spiel.python.utils import file_logger
@@ -142,7 +142,8 @@ class Config(collections.namedtuple(
         "output_size",
         "verbose",
         "quiet",
-        "fix_environment"
+        "fix_environment",
+        "dominated",
     ])):
   """A config for the model/experiment."""
   @property
@@ -505,12 +506,8 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
 def alpha_zero(config: Config):
   """Start all the worker processes for a full alphazero setup."""
   game = pyspiel.load_game(config.game)
-  if game.observation_tensor_shape_specs() == pyspiel.TensorShapeSpecs.VECTOR:
-      shape=game.observation_tensor_shape()
-  else:
-      shape=game.observation_tensor_shapes_list()
   config = config._replace(
-      observation_shape=shape,
+      observation_shape=game.observation_tensor_shape(),
       output_size=game.num_distinct_actions())
 
   print("Starting game", config.game)

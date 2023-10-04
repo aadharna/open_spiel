@@ -117,6 +117,9 @@ class ModelV2:
                 self.input_mask = keras.layers.Input(shape=(self.action_size,), name="legals_mask")
                 flattened = keras.layers.Flatten(name="flatten")(self.input_state)
                 y = keras.layers.BatchNormalization()(flattened)
+                for i in range(self.config.nn_depth):
+                    y = keras.layers.Dense(self.config.nn_width, activation="relu")(y)
+                    y = keras.layers.BatchNormalization()(y)
                 y = keras.layers.Dense(128, activation="relu")(y)
                 z = keras.layers.BatchNormalization()(y)
                 self.pi = keras.layers.Dense(self.action_size, activation="softmax", name="policy_targets_unmasked")(
