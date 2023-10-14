@@ -143,7 +143,6 @@ class Config(collections.namedtuple(
         "verbose",
         "quiet",
         "fix_environment",
-        "dominated",
     ])):
   """A config for the model/experiment."""
   @property

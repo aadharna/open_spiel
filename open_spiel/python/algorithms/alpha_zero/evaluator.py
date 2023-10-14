@@ -47,7 +47,7 @@ class AlphaZeroEvaluator(mcts.Evaluator):
 
   def _inference(self, state):
     # Make a singleton batch
-    obs = np.expand_dims(np.reshape(state.observation_tensor(),self.game.observation_tensor_shape()), 0)
+    obs = np.expand_dims(state.observation_tensor(), 0)
     mask = np.expand_dims(state.legal_actions_mask(), 0)
 
     # ndarray isn't hashable

@@ -19,7 +19,9 @@ from absl import flags
 
 import dominated_c4
 import random_c4
-import alpha_zero_v2
+import alpha_zero_population as alpha_zero
+# import alpha_zero
+# import alpha_zero_v2
 import model as model_lib
 from open_spiel.python.utils import spawn
 
@@ -39,12 +41,12 @@ flags.DEFINE_float("temperature", 1,
                    "Temperature for final move selection.")
 flags.DEFINE_integer("temperature_drop", 10,  # Less than AZ due to short games.
                      "Drop the temperature to 0 after this many moves.")
-flags.DEFINE_enum("nn_model", "resnet", model_lib.Model.valid_model_types,
+flags.DEFINE_enum("nn_model", "mlp", model_lib.Model.valid_model_types,
                   "What type of model should be used?.")
 flags.DEFINE_integer("nn_width", 2 ** 7, "How wide should the network be.")
 flags.DEFINE_integer("nn_depth", 10, "How deep should the network be.")
 flags.DEFINE_string("path", None, "Where to save checkpoints.")
-flags.DEFINE_integer("checkpoint_freq", 100, "Save a checkpoint every N steps.")
+flags.DEFINE_integer("checkpoint_freq", 5, "Save a checkpoint every N steps.")
 flags.DEFINE_integer("actors", 2, "How many actors to run.")
 flags.DEFINE_integer("evaluators", 1, "How many evaluators to run.")
 flags.DEFINE_integer("evaluation_window", 100,
@@ -54,17 +56,16 @@ flags.DEFINE_integer(
     ("Play evaluation games vs MCTS+Solver, with max_simulations*10^(n/2)"
      " simulations for n in range(eval_levels). Default of 7 means "
      "running mcts with up to 1000 times more simulations."))
-flags.DEFINE_integer("max_steps", 0, "How many learn steps before exiting.")
+flags.DEFINE_integer("max_steps", 25, "How many learn steps before exiting.")
 flags.DEFINE_bool("quiet", True, "Don't show the moves as they're played.")
 flags.DEFINE_bool("verbose", False, "Show the MCTS stats of possible moves.")
-flags.DEFINE_bool("dominated", False, "play real c4 or dominated c4")
 flags.DEFINE_bool('fix_environment', False, '??')
 
 FLAGS = flags.FLAGS
 
 
 def main(unused_argv):
-  config = alpha_zero_v2.Config(
+  config = alpha_zero.Config(
       game=FLAGS.game,
       path=FLAGS.path,
       learning_rate=FLAGS.learning_rate,
@@ -93,11 +94,10 @@ def main(unused_argv):
       output_size=None,
 
       quiet=FLAGS.quiet,
-      dominated=FLAGS.dominated,
-      verbose=FLAGS.verbose,
-      fix_environment=FLAGS.fix_environment,
+      # verbose=FLAGS.verbose,
+      # fix_environment=FLAGS.fix_environment,
   )
-  alpha_zero_v2.alpha_zero(config)
+  alpha_zero.alpha_zero(config)
 
 
 if __name__ == "__main__":

@@ -346,10 +346,10 @@ class Model(object):
 
     return Losses(policy_loss, value_loss, l2_reg_loss)
 
-  def save_checkpoint(self, step):
+  def save_checkpoint(self, step, model_type='checkpoint'):
     return self._saver.save(
         self._session,
-        os.path.join(self._path, "checkpoint"),
+        os.path.join(self._path, model_type),
         global_step=step)
 
   def load_checkpoint(self, path):
