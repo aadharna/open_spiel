@@ -263,13 +263,13 @@ def update_checkpoint(logger, queue, model, az_evaluator):
         logger.print("Inference cache:", az_evaluator.current_agent.evaluator.cache_info())
         logger.print("Loading checkpoint", path)
 
-        # Check path string
-        # Most recent checkpoint
-        if re.match(r'.*-1(\..*)?$', path):
-            az_evaluator.update_current_agent_to_main(path)
+        # bring the primary agent up to date
+        latest_path = os.path.join(model._path, 'checkpoint--1')
+        if os.path.exists(latest_path):
+            az_evaluator.update_current_agent_to_main(latest_path)
 
         # Policy checkpoint (historical archive)
-        elif re.match(r'.*historical.*', path):
+        if re.match(r'.*historical.*', path):
             logger.print("Adding to historical archive")
             az_evaluator.add_checkpoint_bot(path)
             # Historical checkpoint (self-play archive)
@@ -283,6 +283,17 @@ def update_checkpoint(logger, queue, model, az_evaluator):
             n_chkpts = len(az_evaluator.checkpoint_mcts_bots)
             logger.print('Number of columns in response matrix', n_cols)
             logger.print('Number of checkpoint bots', n_chkpts)
+            if n_cols > n_chkpts:
+                # get a list of the historical checkpoints in the save directory
+                checkpoint_paths = [f for f in 
+                                    os.listdir(model._path) if
+                                    re.match(r'.*historical.*', f)]
+                for f in checkpoint_paths:
+                    full_path = os.path.join(model._path, f)
+                    if full_path not in az_evaluator.checkpoint_mcts_bots:
+                        az_evaluator.add_checkpoint_bot(full_path)
+            logger.print("corrected number of checkpoint bots", len(az_evaluator.checkpoint_mcts_bots))
+
         # Policy checkpoint (novelty archive)
         elif re.match(r'.*novelty.*', path):
             logger.print('Adding to novelty archive')
@@ -550,8 +561,8 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
                 a_dict[k].append(traj.returns[1])
 
         a_vec = np.array(list(a_dict.values())).flatten()
-        logger.print('a_vec', a_vec)
-        logger.print('outcome_matrix', outcome_matrix)
+        # logger.print('a_vec', a_vec)
+        # logger.print('outcome_matrix', outcome_matrix)
         novelty_distance = 0
         if a_vec.shape[0] >= 2 and outcome_matrix.shape[1] >= 2:
             try:
@@ -615,8 +626,12 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
             # wait just a moment to make sure that we finish saving the checkpoints before broadcasting
             time.sleep(0.1)
             population_bot.evaluator.update_response_matrix(response_matrix_path)
-            time.sleep(1)
+            # This doesn't happen super frequently, so just be willing to wait a long time here to make sure that everyong picks up this checkpoint
+            broadcast_fn(save_path)
+            time.sleep(10)
 
+        save_path = model.save_checkpoint(step=-1, model_type='checkpoint')
+        
         for eval_process in evaluators:
             while True:
                 try:
@@ -625,6 +640,14 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
                 except spawn.Empty:
                     break
 
+        if outcome_matrix.shape[1] < 2:
+            outcom_matrix_cardinality = 0.5
+        else:
+            norms_new = np.linalg.norm(outcome_matrix, axis=1, keepdims=True)
+            M_normalized_new = outcome_matrix / norms_new
+            L_new = np.dot(M_normalized_new, M_normalized_new.T)
+            outcom_matrix_cardinality = np.trace(np.eye(L_new.shape[0]) - np.linalg.inv(L_new + np.eye(L_new.shape[0])))
+        
         batch_size_stats = stats.BasicStats()  # Only makes sense in C++.
         batch_size_stats.add(1)
         data_log.write({
@@ -647,6 +670,7 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
             "batch_size": batch_size_stats.as_dict,
             "batch_size_hist": [0, 1],
             'novelty': novelty_distance,
+            'outcome_matrix_cardinality': outcom_matrix_cardinality,
             "loss": {
                 "policy": losses.policy,
                 "value": losses.value,
@@ -678,6 +702,9 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
 def alpha_zero(config: Config):
     """Start all the worker processes for a full alphazero setup."""
     game = pyspiel.load_game(config.game)
+    if config.game == 'python_dominated_connect_four' or config.game == "python_randomized_connect_four":
+        eval_game = pyspiel.load_game('connect_four')
+    
     config = config._replace(
         observation_shape=game.observation_tensor_shape(),
         output_size=game.num_distinct_actions())
@@ -713,9 +740,14 @@ def alpha_zero(config: Config):
     actors = [spawn.Process(actor, kwargs={"game": game, "config": config,
                                            "num": i})
               for i in range(config.actors)]
-    evaluators = [spawn.Process(evaluator, kwargs={"game": game, "config": config,
+    if config.game == 'python_dominated_connect_four' or config.game == "python_randomized_connect_four":
+        evaluators = [spawn.Process(evaluator, kwargs={"game": eval_game, "config": config,
+                                                     "num": i})
+                         for i in range(config.evaluators)]
+    else:
+        evaluators = [spawn.Process(evaluator, kwargs={"game": game, "config": config,
                                                    "num": i})
-                  for i in range(config.evaluators)]
+                      for i in range(config.evaluators)]
 
     def broadcast(msg):
         for proc in actors + evaluators:
