@@ -14,7 +14,7 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
     self.game = game
     self.config = config
     # each individual of the population gets 1/5 of the max simulation budget
-    self.config.max_simulations = config.max_simulations // 5
+    self.config = config._replace(max_simulations=config.max_simulations // 5)
     self.model = model
     self.k = k
     self.threshold = 0.15
