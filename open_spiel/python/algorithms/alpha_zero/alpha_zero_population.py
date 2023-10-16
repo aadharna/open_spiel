@@ -285,9 +285,10 @@ def update_checkpoint(logger, queue, model, az_evaluator):
             logger.print('Number of checkpoint bots', n_chkpts)
             if n_cols > n_chkpts:
                 # get a list of the historical checkpoints in the save directory
-                checkpoint_paths = [f for f in 
+                checkpoint_paths = [f.split('.')[0] for f in 
                                     os.listdir(model._path) if
                                     re.match(r'.*historical.*', f)]
+                checkpoint_paths = list(set(checkpoint_paths))
                 for f in checkpoint_paths:
                     full_path = os.path.join(model._path, f)
                     if full_path not in az_evaluator.checkpoint_mcts_bots:
@@ -348,7 +349,7 @@ def actor(*, config, game, logger, queue):
         'dont_return_chance_node': False
     }
     # az_evaluator = evaluator_lib.AlphaZeroEvaluator(game, model)
-    pop_az_evaluator = AZPopulationWithEvaluators(game=game, model=model, init_bot_fn=_init_bot, model_config=config,
+    pop_az_evaluator = AZPopulationWithEvaluators(game=game, model=model, init_bot_fn=_init_bot, config=config,
                                                   k=5)
     bots = [
         _init_bot(config, game, pop_az_evaluator, False),
@@ -371,7 +372,7 @@ def evaluator(*, game, config, logger, queue):
     model = _init_model_from_config(config)
     logger.print("Initializing bots")
 
-    pop_az_evaluator = AZPopulationWithEvaluators(game=game, model=model, init_bot_fn=_init_bot, model_config=config,
+    pop_az_evaluator = AZPopulationWithEvaluators(game=game, model=model, init_bot_fn=_init_bot, config=config,
                                                   k=5)
     random_evaluator = mcts.RandomRolloutEvaluator()
 
@@ -440,7 +441,7 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
     threshold = 0.15
 
     # build an azpopulation object so that we can hold all the historical and novelty policies in one place
-    az_evaluator = AZPopulationWithEvaluators(game=game, model=model, init_bot_fn=_init_bot, model_config=config,
+    az_evaluator = AZPopulationWithEvaluators(game=game, model=model, init_bot_fn=_init_bot, config=config,
                                               k=n_neighbors)
     population_bot = _init_bot(config, game, az_evaluator, False)
 
@@ -696,7 +697,6 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
 
         time.sleep(1) # wait before broadcasting the checkpoint to make sure we saved any new novelty/historical policies
         broadcast_fn(save_path)
-        time.sleep(1)
 
 
 def alpha_zero(config: Config):

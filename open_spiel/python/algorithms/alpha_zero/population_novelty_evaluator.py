@@ -1,4 +1,5 @@
 import os
+import re
 import numpy as np
 import pickle as pkl
 from evaluator import AlphaZeroEvaluator
@@ -9,41 +10,43 @@ from open_spiel.python.algorithms import mcts
 
 
 class AZPopulationWithEvaluators(mcts.Evaluator):
-  def __init__(self, game, init_bot_fn, model, model_config, k=5):
+  def __init__(self, game, init_bot_fn, model, config, k=5):
     self.game = game
-    self.model_config = model_config
+    self.config = config
+    # each individual of the population gets 1/5 of the max simulation budget
+    self.config.max_simulations = config.max_simulations // 5
     self.model = model
     self.k = k
     self.threshold = 0.15
     self.init_bot_fn = init_bot_fn
 
-    self.current_agent = init_bot_fn(model_config, game, AlphaZeroEvaluator(self.game, self.model), False)
+    self.current_agent = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, self.model), False)
     
-    init_hist_model = _init_model_from_config(self.model_config)
-    init_hist_chkpt = init_bot_fn(model_config, game, AlphaZeroEvaluator(self.game, init_hist_model), False)
+    init_hist_model = _init_model_from_config(self.config)
+    init_hist_chkpt = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, init_hist_model), False)
     self.checkpoint_evaluators = {'checkpoint-0': init_hist_chkpt.evaluator}
     self.checkpoint_mcts_bots = {'checkpoint-0': init_hist_chkpt}
 
 
-    init_nov_model = _init_model_from_config(self.model_config)
-    init_nov_chkpt = init_bot_fn(model_config, game, AlphaZeroEvaluator(self.game, init_nov_model), False)
+    init_nov_model = _init_model_from_config(self.config)
+    init_nov_chkpt = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, init_nov_model), False)
     self.novelty_evaluators = {'checkpoint-0': init_nov_chkpt.evaluator}
     self.novelty_mcts_bots = {'checkpoint-0': init_nov_chkpt}
     
     self.A = np.array([[0]])
   
   def add_checkpoint_bot(self, checkpoint_path):
-    model = _init_model_from_config(self.model_config)
+    model = _init_model_from_config(self.config)
     model.load_checkpoint(checkpoint_path)
     self.checkpoint_evaluators[checkpoint_path] = AlphaZeroEvaluator(self.game, model)
-    self.checkpoint_mcts_bots[checkpoint_path] = self.init_bot_fn(self.model_config, self.game, self.checkpoint_evaluators[checkpoint_path], False)
+    self.checkpoint_mcts_bots[checkpoint_path] = self.init_bot_fn(self.config, self.game, self.checkpoint_evaluators[checkpoint_path], False)
 
 
   def add_novelty_bot(self, checkpoint_path):
-    model = _init_model_from_config(self.model_config)
+    model = _init_model_from_config(self.config)
     model.load_checkpoint(checkpoint_path)
     self.novelty_evaluators[checkpoint_path] = AlphaZeroEvaluator(self.game, model)
-    self.novelty_mcts_bots[checkpoint_path] = self.init_bot_fn(self.model_config, self.game, self.novelty_evaluators[checkpoint_path], False)
+    self.novelty_mcts_bots[checkpoint_path] = self.init_bot_fn(self.config, self.game, self.novelty_evaluators[checkpoint_path], False)
 
   def is_novel(self, a):
     # A is a matrix of outcomes
@@ -67,16 +70,30 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
   def evaluate(self, state):
     working_state = state.clone()
     # play a rollout against each checkpoint bot
+
+    # check if the number of historical bots is equal to the number of columns in A
+    if self.A.shape[1] != len(self.checkpoint_mcts_bots):
+      # load all missing checkpoint bots
+      all_checkpoints = [f.split('.')[0] for f in 
+                            os.listdir(self.model._path) if
+                            re.match(r'.*historical.*', f)]
+      checkpoint_paths = list(set(checkpoint_paths))
+      for f in all_checkpoints:
+          full_path = os.path.join(self.model._path, f)
+          if full_path not in self.checkpoint_mcts_bots:
+              self.add_checkpoint_bot(full_path)
+
+
     checkpoint_results = []
     for evaluator_idx, bot in self.checkpoint_mcts_bots.items():
-      # p1, p2 = self.guided_rollout(working_state, 
-      #                     self.current_agent, 
-      #                     bot)
-      # checkpoint_results.append(p2)
-      p1, p2 = bot.evaluator.evaluate(working_state) # how well do I, the opponent, think I'll do in this board state?
-      checkpoint_results.append(p1)
+      p1, p2 = self.guided_rollout(working_state, 
+                                   self.current_agent, 
+                                   bot)
+      checkpoint_results.append(p2)
+      # p1, p2 = bot.evaluator.evaluate(working_state) # how well do I, the opponent, think I'll do in this board state?
+      # checkpoint_results.append(p1)
 
-    if bool(checkpoint_results):
+    if len(checkpoint_results) > 1:
       # check novelty of response vector
       is_novel, dist = self.is_novel(checkpoint_results)
     else:
@@ -114,11 +131,7 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
 
   def update_response_matrix(self, novelty_archive_path):
     # load the novelty archive
-    # archive_file = open(novelty_archive_path, 'rb')
     self.A = np.load(novelty_archive_path)
-    # if self.A.shape[0] != len(self.novelty_mcts_bots):
-    #   print(self.A.shape[0], len(self.novelty_mcts_bots))
-    #   raise ValueError('Novelty archive and novelty bots do not match in size.')
 
 
 
