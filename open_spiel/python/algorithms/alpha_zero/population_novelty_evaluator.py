@@ -103,17 +103,22 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
   def prior(self, state):
     return self.current_agent.evaluator.prior(state)
 
-  def guided_rollout(self, state, p1_bot, p2_bot, n=5):
+  def guided_rollout(self, state, p1_bot, p2_bot, n=1):
     results = [0, 0]
     for _ in range(n):
       working_state = state.clone()
-      evaluators = [p1_bot, p2_bot]
+      bots = [p1_bot, p2_bot]
 
       while not working_state.is_terminal():
         # if it is p2's turn, the state current player will tell us so we don't need to change anything
         current_player = working_state.current_player()
-        evaluator = evaluators[current_player]
-        action = evaluator.step(working_state)
+        bot = bots[current_player]
+        actions_and_probs = bot.evaluator.prior(working_state)
+        actions = [a[0] for a in actions_and_probs]
+        probs = [a[1] for a in actions_and_probs]
+        # take the softmax of the probs
+        probs = np.exp(probs) / np.sum(np.exp(probs))
+        action = np.random.choice(actions, p=probs)
         working_state.apply_action(action)
       result = working_state.returns()
       p1_result = result[0]
