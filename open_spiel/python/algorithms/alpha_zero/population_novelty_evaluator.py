@@ -22,19 +22,19 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
 
     self.current_agent = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, self.model), False)
     
-    init_hist_model = _init_model_from_config(self.config)
-    init_hist_chkpt = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, init_hist_model), False)
-    self.checkpoint_evaluators = {'checkpoint-0': init_hist_chkpt.evaluator}
-    self.checkpoint_mcts_bots = {'checkpoint-0': init_hist_chkpt}
+    # init_hist_model = _init_model_from_config(self.config)
+    # init_hist_chkpt = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, init_hist_model), False)
+    self.checkpoint_evaluators = {} # 'checkpoint-0': init_hist_chkpt.evaluator}
+    self.checkpoint_mcts_bots = {}  # 'checkpoint-0': init_hist_chkpt}
 
 
-    init_nov_model = _init_model_from_config(self.config)
-    init_nov_chkpt = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, init_nov_model), False)
-    self.novelty_evaluators = {'checkpoint-0': init_nov_chkpt.evaluator}
-    self.novelty_mcts_bots = {'checkpoint-0': init_nov_chkpt}
+    # init_nov_model = _init_model_from_config(self.config)
+    # init_nov_chkpt = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, init_nov_model), False)
+    self.novelty_evaluators = {} # 'checkpoint-0': init_nov_chkpt.evaluator}
+    self.novelty_mcts_bots = {}  # 'checkpoint-0': init_nov_chkpt}
 
     self.novelty = config.novelty
-    self.A = np.array([[0]])
+    self.A = np.array([[]]) # begin empty and fill it up as we go
   
   def add_checkpoint_bot(self, checkpoint_path):
     model = _init_model_from_config(self.config)
