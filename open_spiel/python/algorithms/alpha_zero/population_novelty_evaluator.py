@@ -32,7 +32,8 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
     init_nov_chkpt = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, init_nov_model), False)
     self.novelty_evaluators = {'checkpoint-0': init_nov_chkpt.evaluator}
     self.novelty_mcts_bots = {'checkpoint-0': init_nov_chkpt}
-    
+
+    self.novelty = config.novelty
     self.A = np.array([[0]])
   
   def add_checkpoint_bot(self, checkpoint_path):
@@ -77,8 +78,8 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
       all_checkpoints = [f.split('.')[0] for f in 
                             os.listdir(self.model._path) if
                             re.match(r'.*historical.*', f)]
-      checkpoint_paths = list(set(checkpoint_paths))
-      for f in all_checkpoints:
+      checkpoint_paths = list(set(all_checkpoints))
+      for f in checkpoint_paths:
           full_path = os.path.join(self.model._path, f)
           if full_path not in self.checkpoint_mcts_bots:
               self.add_checkpoint_bot(full_path)
@@ -93,11 +94,11 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
       # p1, p2 = bot.evaluator.evaluate(working_state) # how well do I, the opponent, think I'll do in this board state?
       # checkpoint_results.append(p1)
 
-    if len(checkpoint_results) > 1:
+    if len(checkpoint_results) > 1 and self.novelty:
       # check novelty of response vector
       is_novel, dist = self.is_novel(checkpoint_results)
     else:
-      dist, _ = self.current_agent.evaluator.evaluate(working_state) 
+      dist, _ = self.current_agent.evaluator.evaluate(working_state)
     return [dist, -dist]
   
   def prior(self, state):
