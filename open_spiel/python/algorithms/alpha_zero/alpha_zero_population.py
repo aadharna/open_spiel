@@ -608,6 +608,8 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
             len(replay_buffer), replay_buffer.total_seen))
 
         save_path, losses = learn(step)
+        if step in [1, 10]:
+            save_path = model.save_checkpoint(step=step, model_type='historical-checkpoint')
 
         if 'historical' in save_path:
             vs_checkpoint_policies = np.zeros(len(population_bot.evaluator.novelty_mcts_bots))
