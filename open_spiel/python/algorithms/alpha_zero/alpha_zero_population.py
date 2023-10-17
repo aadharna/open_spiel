@@ -419,9 +419,8 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
     logger.print("Model type: %s(%s, %s)" % (config.nn_model, config.nn_width,
                                              config.nn_depth))
     logger.print("Model size:", model.num_trainable_variables, "variables")
-    save_path = model.save_checkpoint(0)
+    save_path = model.save_checkpoint(0, 'historical-checkpoint')
     logger.print("Initial checkpoint:", save_path)
-    broadcast_fn(save_path)
 
     data_log = data_logger.DataLoggerJsonLines(config.path, "learner", True)
 
@@ -445,6 +444,17 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
     az_evaluator = AZPopulationWithEvaluators(game=game, model=model, init_bot_fn=_init_bot, config=config,
                                               k=n_neighbors)
     population_bot = _init_bot(config, game, az_evaluator, False)
+
+    # save the initial model as both a historical model and as a novelty model
+    response_matrix_path = save_path.replace('historical', 'response-matrix') + '.npy'
+    np.save(response_matrix_path, outcome_matrix)
+    broadcast_fn(save_path)
+    time.sleep(3)
+    nov_path = model.save_checkpoint(0, 'novelty-checkpoint')
+    time.sleep(3)
+    broadcast_fn(nov_path)
+    population_bot.evaluator.add_novelty_bot(nov_path)
+    population_bot.evaluator.A = outcome_matrix
 
     def trajectory_generator():
         """Merge all the actor queues into a single generator."""
@@ -555,6 +565,20 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
         trajectories = collect_but_keep_trajectories_whole()
 
         if config.novelty:
+
+            # check if the number of historical bots is equal to the number of columns in A
+            if outcome_matrix.shape[1] != len(population_bot.evaluator.checkpoint_mcts_bots):
+            # load all missing checkpoint bots
+                all_checkpoints = [f.split('.')[0] for f in 
+                                        os.listdir(model._path) if
+                                        re.match(r'.*historical.*', f)]
+                checkpoint_paths = list(set(all_checkpoints))
+                for f in checkpoint_paths:
+                    full_path = os.path.join(model._path, f)
+                    if full_path not in population_bot.evaluator.checkpoint_mcts_bots:
+                        population_bot.evaluator.add_checkpoint_bot(full_path)
+
+
             # calculate novelty against the trajectories
             a_dict = collections.defaultdict(list)
             # play each of the agents in the historical-population
@@ -628,7 +652,13 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
                     extra_games += 1
                     trajectory = _play_game(logger, extra_games, game, game_bots, temperature=1, temperature_drop=0)
                     vs_checkpoint_policies[i] = trajectory.returns[0]
-                outcome_matrix = np.hstack((outcome_matrix, vs_checkpoint_policies.reshape(-1, 1)))
+                try:
+                    if outcome_matrix.shape[1] == 0:
+                        outcome_matrix = np.append(outcome_matrix, vs_checkpoint_policies.reshape(-1, 1), axis=1)
+                    else:
+                        outcome_matrix = np.hstack((outcome_matrix, vs_checkpoint_policies.reshape(-1, 1)))
+                except ValueError:
+                    import pdb; pdb.set_trace()
                 # save the response matrix checkpoint
                 response_matrix_path = save_path.replace('historical', 'response-matrix') + '.npy'
                 np.save(response_matrix_path, outcome_matrix)
@@ -637,7 +667,7 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
                 population_bot.evaluator.update_response_matrix(response_matrix_path)
                 # This doesn't happen super frequently, so just be willing to wait a long time here to make sure that everyong picks up this checkpoint
                 broadcast_fn(save_path)
-                time.sleep(10)
+                time.sleep(5)
 
         save_path = model.save_checkpoint(step=-1, model_type='checkpoint')
         

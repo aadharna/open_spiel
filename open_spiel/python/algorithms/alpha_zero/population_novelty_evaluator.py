@@ -34,7 +34,7 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
     self.novelty_mcts_bots = {}  # 'checkpoint-0': init_nov_chkpt}
 
     self.novelty = config.novelty
-    self.A = np.array([[]]) # begin empty and fill it up as we go
+    self.A = np.array([[]]) # begin empty and fill it up as we go 
   
   def add_checkpoint_bot(self, checkpoint_path):
     model = _init_model_from_config(self.config)
