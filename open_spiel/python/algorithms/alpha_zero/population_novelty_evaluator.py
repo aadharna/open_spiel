@@ -35,6 +35,7 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
 
     self.novelty = config.novelty
     self.A = np.array([[]]) # begin empty and fill it up as we go 
+    self.current_A_path = None
   
   def add_checkpoint_bot(self, checkpoint_path):
     model = _init_model_from_config(self.config)
@@ -71,6 +72,17 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
   def evaluate(self, state):
     working_state = state.clone()
     # play a rollout against each checkpoint bot
+    # make sure A is up to date
+    if self.current_A_path is not None:
+      # look up all the response matrix checkpoint paths e.g., response-matrix-checkpoint-10.npy
+      all_checkpoints = [int(f.split('.')[0].split('-')[-1]) for f in os.listdir(self.model._path) if re.match(r'.*response-matrix.*', f)]
+      # get the latest checkpoint
+      latest_checkpoint = max(all_checkpoints)
+      # check that the latest checkpoint is the one we loaded
+      if latest_checkpoint != int(self.current_A_path.split('.')[0].split('-')[-1]):
+        # load the latest checkpoint
+        self.update_response_matrix(os.path.join(self.model._path, f'response-matrix-checkpoint-{latest_checkpoint}.npy'))
+        self.current_A_path = os.path.join(self.model._path, f'response-matrix-checkpoint-{latest_checkpoint}.npy')
 
     # check if the number of historical bots is equal to the number of columns in A
     if self.A.shape[1] != len(self.checkpoint_mcts_bots):
@@ -137,6 +149,7 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
 
   def update_response_matrix(self, novelty_archive_path):
     # load the novelty archive
+    self.current_A_path = novelty_archive_path
     self.A = np.load(novelty_archive_path)
 
 
