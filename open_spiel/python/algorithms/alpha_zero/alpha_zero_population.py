@@ -353,10 +353,10 @@ def actor(*, config, game, logger, queue):
         op_bot = bots[1]
         op_name = 'checkpoint--1'
         # sample opponent from opponents
-        if len(pop_az_evaluator.checkpoint_mcts_bots) >= 2:
-            op = np.random.choice(list(pop_az_evaluator.checkpoint_mcts_bots.keys()))
-            op_bot = pop_az_evaluator.checkpoint_mcts_bots[op]
-            op_name = op
+        # if len(pop_az_evaluator.checkpoint_mcts_bots) >= 2:
+        #     op = np.random.choice(list(pop_az_evaluator.checkpoint_mcts_bots.keys()))
+        #     op_bot = pop_az_evaluator.checkpoint_mcts_bots[op]
+        #     op_name = op
 
         game_bots = [bots[0], op_bot, op_name]
         queue.put(_play_game(logger, game_num, game, game_bots, config.temperature,
