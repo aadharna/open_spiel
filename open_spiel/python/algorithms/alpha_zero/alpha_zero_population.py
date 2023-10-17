@@ -144,6 +144,7 @@ class Config(collections.namedtuple(
         "output_size",
 
         "quiet",
+        "novelty",
     ])):
     """A config for the model/experiment."""
     pass
@@ -338,16 +339,6 @@ def actor(*, config, game, logger, queue):
     logger.print("Initializing model")
     model = _init_model_from_config(config)
     logger.print("Initializing bots")
-    mcts_args = {
-        'uct_c': config.uct_c,
-        'max_simulations': config.max_simulations,
-        'solve': True,
-        # 'random_state': np.random.RandomState(42),
-        'child_selection_fn': mcts.SearchNode.puct_value,
-        'dirichlet_noise': None,
-        'verbose': False,
-        'dont_return_chance_node': False
-    }
     # az_evaluator = evaluator_lib.AlphaZeroEvaluator(game, model)
     pop_az_evaluator = AZPopulationWithEvaluators(game=game, model=model, init_bot_fn=_init_bot, config=config,
                                                   k=5)
@@ -358,8 +349,16 @@ def actor(*, config, game, logger, queue):
     for game_num in itertools.count():
         if not update_checkpoint(logger, queue, model, pop_az_evaluator):
             return
+        
+        op_bot = bots[1]
+        op_name = 'checkpoint--1'
+        # sample opponent from opponents
+        if len(pop_az_evaluator.checkpoint_mcts_bots) >= 2:
+            op = np.random.choice(list(pop_az_evaluator.checkpoint_mcts_bots.keys()))
+            op_bot = pop_az_evaluator.checkpoint_mcts_bots[op]
+            op_name = op
 
-        game_bots = [bots[0], bots[1], 'checkpoint--1']
+        game_bots = [bots[0], op_bot, op_name]
         queue.put(_play_game(logger, game_num, game, game_bots, config.temperature,
                              config.temperature_drop))
 
@@ -439,6 +438,8 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
     outcome_matrix = np.array([[0]])
     n_neighbors = 5
     threshold = 0.15
+    novelty_distance = 0
+    outcom_matrix_cardinality = 0
 
     # build an azpopulation object so that we can hold all the historical and novelty policies in one place
     az_evaluator = AZPopulationWithEvaluators(game=game, model=model, init_bot_fn=_init_bot, config=config,
@@ -552,44 +553,46 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
         outcomes.reset()
 
         trajectories = collect_but_keep_trajectories_whole()
-        # calculate novelty against the trajectories
-        a_dict = collections.defaultdict(list)
-        # play each of the agents in the historical-population
-        for k, v in az_evaluator.checkpoint_mcts_bots.items():
-            if k not in a_dict:
-                extra_games += 1
-                traj = _play_game(logger, extra_games, game, [population_bot, v, k], temperature=1, temperature_drop=0)
-                a_dict[k].append(traj.returns[1])
 
-        a_vec = np.array(list(a_dict.values())).flatten()
-        # logger.print('a_vec', a_vec)
-        # logger.print('outcome_matrix', outcome_matrix)
-        novelty_distance = 0
-        if a_vec.shape[0] >= 2 and outcome_matrix.shape[1] >= 2:
-            try:
-                is_vector_novel, novelty_distance = is_novel(outcome_matrix, a_vec)
-            except AssertionError:
-                import pdb;
-                pdb.set_trace()
-            if is_vector_novel:
+        if config.novelty:
+            # calculate novelty against the trajectories
+            a_dict = collections.defaultdict(list)
+            # play each of the agents in the historical-population
+            for k, v in az_evaluator.checkpoint_mcts_bots.items():
+                if k not in a_dict:
+                    extra_games += 1
+                    traj = _play_game(logger, extra_games, game, [population_bot, v, k], temperature=1, temperature_drop=0)
+                    a_dict[k].append(traj.returns[1])
+
+            a_vec = np.array(list(a_dict.values())).flatten()
+            # logger.print('a_vec', a_vec)
+            # logger.print('outcome_matrix', outcome_matrix)
+            novelty_distance = 0
+            if a_vec.shape[0] >= 2 and outcome_matrix.shape[1] >= 2:
                 try:
-                    outcome_matrix = np.vstack((outcome_matrix, a_vec))
-                except ValueError:
+                    is_vector_novel, novelty_distance = is_novel(outcome_matrix, a_vec)
+                except AssertionError:
                     import pdb;
                     pdb.set_trace()
-                for traj in trajectories:
-                    traj.novelty = novelty_distance
-                # save the model checkpoint
-                save_path = model.save_checkpoint(step=step, model_type='novelty-checkpoint')
-                # save the new outcome matrix
-                response_matrix_path = save_path.replace('novelty', 'response-matrix') + '.npy'
-                np.save(response_matrix_path, outcome_matrix)
-                # wait just a moment to make sure that we finish saving the checkpoints before broadcasting
-                time.sleep(0.05)
-                broadcast_fn(save_path)
-                time.sleep(2)
-                population_bot.evaluator.add_novelty_bot(save_path)
-                population_bot.evaluator.update_response_matrix(response_matrix_path)
+                if is_vector_novel:
+                    try:
+                        outcome_matrix = np.vstack((outcome_matrix, a_vec))
+                    except ValueError:
+                        import pdb;
+                        pdb.set_trace()
+                    for traj in trajectories:
+                        traj.novelty = novelty_distance
+                    # save the model checkpoint
+                    save_path = model.save_checkpoint(step=step, model_type='novelty-checkpoint')
+                    # save the new outcome matrix
+                    response_matrix_path = save_path.replace('novelty', 'response-matrix') + '.npy'
+                    np.save(response_matrix_path, outcome_matrix)
+                    # wait just a moment to make sure that we finish saving the checkpoints before broadcasting
+                    time.sleep(0.05)
+                    broadcast_fn(save_path)
+                    time.sleep(2)
+                    population_bot.evaluator.add_novelty_bot(save_path)
+                    population_bot.evaluator.update_response_matrix(response_matrix_path)
 
         num_trajectories, num_states = collect_trajectories(trajectories)
         total_trajectories += num_trajectories
@@ -611,27 +614,30 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
         if step in [1, 10]:
             save_path = model.save_checkpoint(step=step, model_type='historical-checkpoint')
 
-        if 'historical' in save_path:
-            vs_checkpoint_policies = np.zeros(len(population_bot.evaluator.novelty_mcts_bots))
-            if vs_checkpoint_policies.size <= 0:
-                vs_checkpoint_policies = np.zeros(1)
-            # play a game against each of the novel policies
-            population_bot.evaluator.add_checkpoint_bot(save_path)
-            for i, (k, op) in enumerate(population_bot.evaluator.novelty_mcts_bots.items()):
-                game_bots = [population_bot.evaluator.checkpoint_mcts_bots[save_path], op, k]
-                extra_games += 1
-                trajectory = _play_game(logger, extra_games, game, game_bots, temperature=1, temperature_drop=0)
-                vs_checkpoint_policies[i] = trajectory.returns[0]
-            outcome_matrix = np.hstack((outcome_matrix, vs_checkpoint_policies.reshape(-1, 1)))
-            # save the response matrix checkpoint
-            response_matrix_path = save_path.replace('historical', 'response-matrix') + '.npy'
-            np.save(response_matrix_path, outcome_matrix)
-            # wait just a moment to make sure that we finish saving the checkpoints before broadcasting
-            time.sleep(0.1)
-            population_bot.evaluator.update_response_matrix(response_matrix_path)
-            # This doesn't happen super frequently, so just be willing to wait a long time here to make sure that everyong picks up this checkpoint
-            broadcast_fn(save_path)
-            time.sleep(10)
+        
+        if config.novelty:
+
+            if 'historical' in save_path:
+                vs_checkpoint_policies = np.zeros(len(population_bot.evaluator.novelty_mcts_bots))
+                if vs_checkpoint_policies.size <= 0:
+                    vs_checkpoint_policies = np.zeros(1)
+                # play a game against each of the novel policies
+                population_bot.evaluator.add_checkpoint_bot(save_path)
+                for i, (k, op) in enumerate(population_bot.evaluator.novelty_mcts_bots.items()):
+                    game_bots = [population_bot.evaluator.checkpoint_mcts_bots[save_path], op, k]
+                    extra_games += 1
+                    trajectory = _play_game(logger, extra_games, game, game_bots, temperature=1, temperature_drop=0)
+                    vs_checkpoint_policies[i] = trajectory.returns[0]
+                outcome_matrix = np.hstack((outcome_matrix, vs_checkpoint_policies.reshape(-1, 1)))
+                # save the response matrix checkpoint
+                response_matrix_path = save_path.replace('historical', 'response-matrix') + '.npy'
+                np.save(response_matrix_path, outcome_matrix)
+                # wait just a moment to make sure that we finish saving the checkpoints before broadcasting
+                time.sleep(0.1)
+                population_bot.evaluator.update_response_matrix(response_matrix_path)
+                # This doesn't happen super frequently, so just be willing to wait a long time here to make sure that everyong picks up this checkpoint
+                broadcast_fn(save_path)
+                time.sleep(10)
 
         save_path = model.save_checkpoint(step=-1, model_type='checkpoint')
         
@@ -643,13 +649,15 @@ def learner(*, game, config, actors, evaluators, broadcast_fn, logger):
                 except spawn.Empty:
                     break
 
-        if outcome_matrix.shape[1] < 2:
-            outcom_matrix_cardinality = 0.5
-        else:
-            norms_new = np.linalg.norm(outcome_matrix, axis=1, keepdims=True)
-            M_normalized_new = outcome_matrix / norms_new
-            L_new = np.dot(M_normalized_new, M_normalized_new.T)
-            outcom_matrix_cardinality = np.trace(np.eye(L_new.shape[0]) - np.linalg.inv(L_new + np.eye(L_new.shape[0])))
+        
+        if config.novelty:
+            if outcome_matrix.shape[1] < 2:
+                outcom_matrix_cardinality = 0.5
+            else:
+                norms_new = np.linalg.norm(outcome_matrix, axis=1, keepdims=True)
+                M_normalized_new = outcome_matrix / norms_new
+                L_new = np.dot(M_normalized_new, M_normalized_new.T)
+                outcom_matrix_cardinality = np.trace(np.eye(L_new.shape[0]) - np.linalg.inv(L_new + np.eye(L_new.shape[0])))
         
         batch_size_stats = stats.BasicStats()  # Only makes sense in C++.
         batch_size_stats.add(1)

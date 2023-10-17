@@ -60,6 +60,7 @@ flags.DEFINE_integer("max_steps", 500, "How many learn steps before exiting.")
 flags.DEFINE_bool("quiet", True, "Don't show the moves as they're played.")
 flags.DEFINE_bool("verbose", False, "Show the MCTS stats of possible moves.")
 flags.DEFINE_bool('fix_environment', False, '??')
+flags.DEFINE_bool('novelty', True, "Use novelty search?")
 
 FLAGS = flags.FLAGS
 
@@ -94,6 +95,7 @@ def main(unused_argv):
       output_size=None,
 
       quiet=FLAGS.quiet,
+      novelty=FLAGS.novelty,
       # verbose=FLAGS.verbose,
       # fix_environment=FLAGS.fix_environment,
   )
