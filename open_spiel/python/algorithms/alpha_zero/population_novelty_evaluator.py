@@ -19,8 +19,9 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
     self.k = k
     self.threshold = 0.15
     self.init_bot_fn = init_bot_fn
+    self.cache_size = 2**20
 
-    self.current_agent = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, self.model), False)
+    self.current_agent = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, self.model, self.cache_size), False)
     
     # init_hist_model = _init_model_from_config(self.config)
     # init_hist_chkpt = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, init_hist_model), False)
@@ -40,14 +41,14 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
   def add_checkpoint_bot(self, checkpoint_path):
     model = _init_model_from_config(self.config)
     model.load_checkpoint(checkpoint_path)
-    self.checkpoint_evaluators[checkpoint_path] = AlphaZeroEvaluator(self.game, model)
+    self.checkpoint_evaluators[checkpoint_path] = AlphaZeroEvaluator(self.game, model, self.cache_size)
     self.checkpoint_mcts_bots[checkpoint_path] = self.init_bot_fn(self.config, self.game, self.checkpoint_evaluators[checkpoint_path], False)
 
 
   def add_novelty_bot(self, checkpoint_path):
     model = _init_model_from_config(self.config)
     model.load_checkpoint(checkpoint_path)
-    self.novelty_evaluators[checkpoint_path] = AlphaZeroEvaluator(self.game, model)
+    self.novelty_evaluators[checkpoint_path] = AlphaZeroEvaluator(self.game, model, self.cache_size)
     self.novelty_mcts_bots[checkpoint_path] = self.init_bot_fn(self.config, self.game, self.novelty_evaluators[checkpoint_path], False)
 
   def is_novel(self, a):
