@@ -46,7 +46,7 @@ import traceback
 
 import numpy as np
 
-from open_spiel.python.algorithms import mcts
+# from open_spiel.python.algorithms import mcts
 from open_spiel.python.algorithms.alpha_zero import evaluator as evaluator_lib
 import pyspiel
 from open_spiel.python.utils import data_logger
@@ -54,6 +54,7 @@ from open_spiel.python.utils import file_logger
 from open_spiel.python.utils import spawn
 from open_spiel.python.utils import stats
 
+import custom_mcts as mcts
 import model as model_lib
 from population_novelty_evaluator import AZPopulationWithEvaluators
 
