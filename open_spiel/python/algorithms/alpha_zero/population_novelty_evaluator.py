@@ -74,41 +74,41 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
     working_state = state.clone()
     # play a rollout against each checkpoint bot
     # make sure A is up to date
-    if self.current_A_path is not None:
-      # look up all the response matrix checkpoint paths e.g., response-matrix-checkpoint-10.npy
-      all_checkpoints = [int(f.split('.')[0].split('-')[-1]) for f in os.listdir(self.model._path) if re.match(r'.*response-matrix.*', f)]
-      # get the latest checkpoint
-      latest_checkpoint = max(all_checkpoints)
-      # check that the latest checkpoint is the one we loaded
-      if latest_checkpoint != int(self.current_A_path.split('.')[0].split('-')[-1]):
-        # load the latest checkpoint
-        self.update_response_matrix(os.path.join(self.model._path, f'response-matrix-checkpoint-{latest_checkpoint}.npy'))
-        self.current_A_path = os.path.join(self.model._path, f'response-matrix-checkpoint-{latest_checkpoint}.npy')
+    if self.novelty:
+      if self.current_A_path is not None:
+        # look up all the response matrix checkpoint paths e.g., response-matrix-checkpoint-10.npy
+        all_checkpoints = [int(f.split('.')[0].split('-')[-1]) for f in os.listdir(self.model._path) if re.match(r'.*response-matrix.*', f)]
+        # get the latest checkpoint
+        latest_checkpoint = max(all_checkpoints)
+        # check that the latest checkpoint is the one we loaded
+        if latest_checkpoint != int(self.current_A_path.split('.')[0].split('-')[-1]):
+          # load the latest checkpoint
+          self.update_response_matrix(os.path.join(self.model._path, f'response-matrix-checkpoint-{latest_checkpoint}.npy'))
+          self.current_A_path = os.path.join(self.model._path, f'response-matrix-checkpoint-{latest_checkpoint}.npy')
 
-    # check if the number of historical bots is equal to the number of columns in A
-    if self.A.shape[1] != len(self.checkpoint_mcts_bots):
-      # load all missing checkpoint bots
-      all_checkpoints = [f.split('.')[0] for f in 
-                            os.listdir(self.model._path) if
-                            re.match(r'.*historical.*', f)]
-      checkpoint_paths = list(set(all_checkpoints))
-      for f in checkpoint_paths:
-          full_path = os.path.join(self.model._path, f)
-          if full_path not in self.checkpoint_mcts_bots:
-              self.add_checkpoint_bot(full_path)
+      # check if the number of historical bots is equal to the number of columns in A
+      if self.A.shape[1] != len(self.checkpoint_mcts_bots):
+        # load all missing checkpoint bots
+        all_checkpoints = [f.split('.')[0] for f in 
+                              os.listdir(self.model._path) if
+                              re.match(r'.*historical.*', f)]
+        checkpoint_paths = list(set(all_checkpoints))
+        for f in checkpoint_paths:
+            full_path = os.path.join(self.model._path, f)
+            if full_path not in self.checkpoint_mcts_bots:
+                self.add_checkpoint_bot(full_path)
 
 
-    checkpoint_results = []
-    for evaluator_idx, bot in self.checkpoint_mcts_bots.items():
-      p1, p2 = self.guided_rollout(working_state, 
-                                   self.current_agent, 
-                                   bot)
-      checkpoint_results.append(p2)
-      # p1, p2 = bot.evaluator.evaluate(working_state) # how well do I, the opponent, think I'll do in this board state?
-      # checkpoint_results.append(p1)
-
-    if len(checkpoint_results) > 1 and self.novelty:
-      # check novelty of response vector
+      checkpoint_results = []
+      for evaluator_idx, bot in self.checkpoint_mcts_bots.items():
+        p1, p2 = self.guided_rollout(working_state, 
+                                    self.current_agent, 
+                                    bot)
+        checkpoint_results.append(p2)
+        # p1, p2 = bot.evaluator.evaluate(working_state) # how well do I, the opponent, think I'll do in this board state?
+        # checkpoint_results.append(p1)
+        # check novelty of response vector
+        
       is_novel, dist = self.is_novel(checkpoint_results)
     else:
       dist, _ = self.current_agent.evaluator.evaluate(working_state)
@@ -127,12 +127,7 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
         # if it is p2's turn, the state current player will tell us so we don't need to change anything
         current_player = working_state.current_player()
         bot = bots[current_player]
-        actions_and_probs = bot.evaluator.prior(working_state)
-        actions = [a[0] for a in actions_and_probs]
-        probs = [a[1] for a in actions_and_probs]
-        # take the softmax of the probs
-        probs = np.exp(probs) / np.sum(np.exp(probs))
-        action = np.random.choice(actions, p=probs)
+        action = bot.step(working_state)
         working_state.apply_action(action)
       result = working_state.returns()
       p1_result = result[0]
