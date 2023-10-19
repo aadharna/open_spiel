@@ -398,8 +398,12 @@ class MCTSBot(pyspiel.Bot):
     root = SearchNode(None, state.current_player(), 1)
     for _ in range(self.max_simulations):
       visit_path, working_state = self._apply_tree_policy(root, state)
-      returns = self.evaluator.evaluate(working_state)
-      solved = False
+      if working_state.is_terminal():
+        returns = working_state.returns()
+        solved = False
+      else:
+        returns = self.evaluator.evaluate(working_state)
+        solved = False
 
       while visit_path:
         # For chance nodes, walk up the tree to find the decision-maker.
