@@ -311,6 +311,11 @@ def update_checkpoint(logger, queue, model, az_evaluator):
             n_novs = len(az_evaluator.novelty_mcts_bots)
             logger.print('Number of rows in response matrix', n_rows)
             logger.print('Number of novelty bots', n_novs)
+
+        for evaluator in az_evaluator.novelty_evaluators.values():
+            evaluator.clear_cache()
+        for evaluator in az_evaluator.checkpoint_evaluators.values():
+            evaluator.clear_cache()
     elif path is not None:  # Empty string means stop this process.
         return False
     return True
@@ -350,15 +355,8 @@ def actor(*, config, game, logger, queue):
     for game_num in itertools.count():
         if not update_checkpoint(logger, queue, model, pop_az_evaluator):
             return
-        
         op_bot = bots[1]
         op_name = 'checkpoint--1'
-        # sample opponent from opponents
-        # if len(pop_az_evaluator.checkpoint_mcts_bots) >= 2:
-        #     op = np.random.choice(list(pop_az_evaluator.checkpoint_mcts_bots.keys()))
-        #     op_bot = pop_az_evaluator.checkpoint_mcts_bots[op]
-        #     op_name = op
-
         game_bots = [bots[0], op_bot, op_name]
         queue.put(_play_game(logger, game_num, game, game_bots, config.temperature,
                              config.temperature_drop))
