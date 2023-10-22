@@ -43,14 +43,14 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
     model = _init_model_from_config(self.config)
     model.load_checkpoint(checkpoint_path)
     self.checkpoint_evaluators[checkpoint_path] = AlphaZeroEvaluator(self.game, model, self.cache_size)
-    self.checkpoint_mcts_bots[checkpoint_path] = self.init_bot_fn(self.config, self.game, self.checkpoint_evaluators[checkpoint_path], False)
+    self.checkpoint_mcts_bots[checkpoint_path] = self.init_bot_fn(self.config, self.game, self.checkpoint_evaluators[checkpoint_path], True)
 
 
   def add_novelty_bot(self, checkpoint_path):
     model = _init_model_from_config(self.config)
     model.load_checkpoint(checkpoint_path)
     self.novelty_evaluators[checkpoint_path] = AlphaZeroEvaluator(self.game, model, self.cache_size)
-    self.novelty_mcts_bots[checkpoint_path] = self.init_bot_fn(self.config, self.game, self.novelty_evaluators[checkpoint_path], False)
+    self.novelty_mcts_bots[checkpoint_path] = self.init_bot_fn(self.config, self.game, self.novelty_evaluators[checkpoint_path], True)
 
   def is_novel(self, a):
     # A is a matrix of outcomes
@@ -131,15 +131,16 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
         bot = bots[current_player]
         if self.rollout_type == 'rollout_type':
           action = bot.step(working_state)
-        elif self.rollout_type == 'no_planning_rollout':
+          working_state.apply_action(action)
+        elif self.rollout_type == 'no_planning':
           actions_and_probs = bot.evaluator.prior(working_state)
           actions = [a[0] for a in actions_and_probs]
           probs = [a[1] for a in actions_and_probs]
           # take the softmax of the probs
           probs = np.exp(probs) / np.sum(np.exp(probs))
           action = np.random.choice(actions, p=probs)
+          working_state.apply_action(action)
         
-        working_state.apply_action(action)
       result = working_state.returns()
       p1_result = result[0]
       p2_result = result[1]

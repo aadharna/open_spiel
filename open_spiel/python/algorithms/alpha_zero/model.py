@@ -177,7 +177,9 @@ class Model(object):
       with tf.device("/cpu:0"):  # Saver only works on CPU.
         saver = tf.train.Saver(
             max_to_keep=10000, sharded=False, name="saver")
-    session = tf.Session(graph=g)
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    session = tf.Session(graph=g, config=config)
     session.__enter__()
     session.run(init)
     return cls(session, saver, path)

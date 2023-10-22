@@ -52,7 +52,7 @@ class AlphaZeroEvaluator(mcts.Evaluator):
 
     # ndarray isn't hashable
     cache_key = obs.tobytes() + mask.tobytes()
-    with tf.device("/cpu:0"):
+    with tf.device("/gpu:0"):
       value, policy = self._cache.make(
           cache_key, lambda: self._model.inference(obs, mask))
 
