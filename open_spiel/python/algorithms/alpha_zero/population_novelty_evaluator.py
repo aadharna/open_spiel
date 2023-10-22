@@ -20,6 +20,7 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
     self.threshold = 0.15
     self.init_bot_fn = init_bot_fn
     self.cache_size = 2**20
+    self.rollout_type = config.rollout_type
 
     self.current_agent = init_bot_fn(config, game, AlphaZeroEvaluator(self.game, self.model, self.cache_size), False)
     
@@ -101,14 +102,15 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
 
       checkpoint_results = []
       for evaluator_idx, bot in self.checkpoint_mcts_bots.items():
-        p1, p2 = self.guided_rollout(working_state, 
-                                    self.current_agent, 
-                                    bot)
-        checkpoint_results.append(p2)
-        # p1, p2 = bot.evaluator.evaluate(working_state) # how well do I, the opponent, think I'll do in this board state?
-        # checkpoint_results.append(p1)
-        # check novelty of response vector
-        
+        if self.rollout_type in ['nested_mcts', 'no_planning']:
+          p1, p2 = self.guided_rollout(working_state, 
+                                       self.current_agent, 
+                                       bot)
+          checkpoint_results.append(p2)
+        else:
+          p1, p2 = bot.evaluator.evaluate(working_state) # how well do I, the opponent, think I'll do in this board state?
+          checkpoint_results.append(p1)
+      # check novelty of response vector
       is_novel, dist = self.is_novel(checkpoint_results)
     else:
       dist, _ = self.current_agent.evaluator.evaluate(working_state)
@@ -127,7 +129,16 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
         # if it is p2's turn, the state current player will tell us so we don't need to change anything
         current_player = working_state.current_player()
         bot = bots[current_player]
-        action = bot.step(working_state)
+        if self.rollout_type == 'rollout_type':
+          action = bot.step(working_state)
+        elif self.rollout_type == 'no_planning_rollout':
+          actions_and_probs = bot.evaluator.prior(working_state)
+          actions = [a[0] for a in actions_and_probs]
+          probs = [a[1] for a in actions_and_probs]
+          # take the softmax of the probs
+          probs = np.exp(probs) / np.sum(np.exp(probs))
+          action = np.random.choice(actions, p=probs)
+        
         working_state.apply_action(action)
       result = working_state.returns()
       p1_result = result[0]

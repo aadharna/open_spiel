@@ -146,6 +146,7 @@ class Config(collections.namedtuple(
 
         "quiet",
         "novelty",
+        "rollout_type"
     ])):
     """A config for the model/experiment."""
     pass

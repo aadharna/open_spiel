@@ -61,6 +61,7 @@ flags.DEFINE_bool("quiet", True, "Don't show the moves as they're played.")
 flags.DEFINE_bool("verbose", False, "Show the MCTS stats of possible moves.")
 flags.DEFINE_bool('fix_environment', False, '??')
 flags.DEFINE_bool('novelty', True, "Use novelty search?")
+flags.DEFINE_string('rollout_type', 'nested_mcts', "when evaluating a node for novelty, should each member of the population do a) nested mcts search, b) play without search, or c) query their value function?")
 
 FLAGS = flags.FLAGS
 
@@ -96,6 +97,7 @@ def main(unused_argv):
 
       quiet=FLAGS.quiet,
       novelty=FLAGS.novelty,
+      rollout_type=FLAGS.rollout_type,
       # verbose=FLAGS.verbose,
       # fix_environment=FLAGS.fix_environment,
   )
