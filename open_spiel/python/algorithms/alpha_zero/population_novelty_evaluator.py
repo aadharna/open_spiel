@@ -129,8 +129,10 @@ class AZPopulationWithEvaluators(mcts.Evaluator):
         # if it is p2's turn, the state current player will tell us so we don't need to change anything
         current_player = working_state.current_player()
         bot = bots[current_player]
-        if self.rollout_type == 'rollout_type':
-          action = bot.step(working_state)
+        if self.rollout_type == 'nested_mcts':
+          action = bot.step(working_state) # runs an mcts-search 
+                                           # looking for best action
+                                           # using the nn in the search
           working_state.apply_action(action)
         elif self.rollout_type == 'no_planning':
           actions_and_probs = bot.evaluator.prior(working_state)
